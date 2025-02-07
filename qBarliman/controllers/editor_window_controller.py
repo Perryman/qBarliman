@@ -23,11 +23,11 @@ from PyQt6.QtCore import (
     pyqtSlot,
     QProcess,
 )
+from PyQt6.QtQuickControls2 import QQuickStyle, QQuickView, QQuickItem
 
 from qBarliman.operations.run_scheme_operation import RunSchemeOperation
 from PyQt6.QtGui import QFont
 from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtQuickControls2 import QQuickStyle, BusyIndicator
 from qBarliman.widgets.scheme_editor_text_view import SchemeEditorTextView
 from qBarliman.utils.constrained_splitter import ConstrainedSplitter
 from qBarliman.constants import *  # warn, good, info, logging fns from here
@@ -90,7 +90,8 @@ class EditorWindowController(QMainWindow):
         self.bestGuessView.setReadOnly(True)
         self.bestGuessView.setFont(default_font)
         self.bestGuessView.setPlaceholderText("No best guess available.")
-        self.bestGuessSpinner = BusyIndicator(self)
+        self.bestGuessSpinner = QQuickView()
+        self.bestGuessSpinner.setSource(QUrl("qrc:/BusyIndicator.qml"))
         self.errorOutputView = QTextEdit(self)  # New widget for error output
         self.errorOutputView.setReadOnly(True)
         self.errorOutputView.hide()  # Initially hidden
@@ -105,8 +106,10 @@ class EditorWindowController(QMainWindow):
         layout.addWidget(self.definitionAndBestGuessSplitView)
 
         # --- Progress Indicators (equivalent to NSProgressIndicator) ---
-        self.schemeDefinitionSpinner = BusyIndicator(self)
-        self.bestGuessSpinner = BusyIndicator(self)
+        self.schemeDefinitionSpinner = QQuickView()
+        self.schemeDefinitionSpinner.setSource(QUrl("qrc:/BusyIndicator.qml"))
+        self.bestGuessSpinner = QQuickView()
+        self.bestGuessSpinner.setSource(QUrl("qrc:/BusyIndicator.qml"))
 
         # Add spinners to layout with proper alignment
         spinner_layout = QHBoxLayout()
@@ -157,7 +160,8 @@ class EditorWindowController(QMainWindow):
             self.testStatusLabels.append(status_label)
             grid.addWidget(status_label, i, 3)
 
-            spinner = BusyIndicator(self)
+            spinner = QQuickView()
+            spinner.setSource(QUrl("qrc:/BusyIndicator.qml"))
             self.testSpinners.append(spinner)
             # Add to grid layout in last column
             grid.addWidget(spinner, i, 4, Qt.AlignmentFlag.AlignRight)
@@ -384,12 +388,12 @@ class EditorWindowController(QMainWindow):
         return full_string
 
     def startSpinner(self, spinner):
-        if isinstance(spinner, BusyIndicator):
-            spinner.start()
+        if isinstance(spinner, QQuickView):
+            spinner.rootObject().setProperty("running", True)
 
     def stopSpinner(self, spinner):
-        if isinstance(spinner, BusyIndicator):
-            spinner.stop()
+        if isinstance(spinner, QQuickView):
+            spinner.rootObject().setProperty("running", False)
 
     def updateBestGuess(self, taskType: str, output: str):
         if taskType == "simple":
