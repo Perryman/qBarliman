@@ -27,7 +27,7 @@ from PyQt6.QtCore import (
 from qBarliman.operations.run_scheme_operation import RunSchemeOperation
 from PyQt6.QtGui import QFont
 from PyQt6.QtCore import QTimer, Qt
-from qBarliman.widgets.spinner_widget import SpinnerWidget
+from PyQt6.QtQuickControls2 import QQuickStyle, BusyIndicator
 from qBarliman.widgets.scheme_editor_text_view import SchemeEditorTextView
 from qBarliman.utils.constrained_splitter import ConstrainedSplitter
 from qBarliman.constants import *  # warn, good, info, logging fns from here
@@ -90,7 +90,7 @@ class EditorWindowController(QMainWindow):
         self.bestGuessView.setReadOnly(True)
         self.bestGuessView.setFont(default_font)
         self.bestGuessView.setPlaceholderText("No best guess available.")
-        self.bestGuessSpinner = SpinnerWidget(self)
+        self.bestGuessSpinner = BusyIndicator(self)
         self.errorOutputView = QTextEdit(self)  # New widget for error output
         self.errorOutputView.setReadOnly(True)
         self.errorOutputView.hide()  # Initially hidden
@@ -105,8 +105,8 @@ class EditorWindowController(QMainWindow):
         layout.addWidget(self.definitionAndBestGuessSplitView)
 
         # --- Progress Indicators (equivalent to NSProgressIndicator) ---
-        self.schemeDefinitionSpinner = SpinnerWidget(self)
-        self.bestGuessSpinner = SpinnerWidget(self)
+        self.schemeDefinitionSpinner = BusyIndicator(self)
+        self.bestGuessSpinner = BusyIndicator(self)
 
         # Add spinners to layout with proper alignment
         spinner_layout = QHBoxLayout()
@@ -157,7 +157,7 @@ class EditorWindowController(QMainWindow):
             self.testStatusLabels.append(status_label)
             grid.addWidget(status_label, i, 3)
 
-            spinner = SpinnerWidget(self)
+            spinner = BusyIndicator(self)
             self.testSpinners.append(spinner)
             # Add to grid layout in last column
             grid.addWidget(spinner, i, 4, Qt.AlignmentFlag.AlignRight)
@@ -384,12 +384,12 @@ class EditorWindowController(QMainWindow):
         return full_string
 
     def startSpinner(self, spinner):
-        if isinstance(spinner, SpinnerWidget):
-            spinner.startAnimation()
+        if isinstance(spinner, BusyIndicator):
+            spinner.start()
 
     def stopSpinner(self, spinner):
-        if isinstance(spinner, SpinnerWidget):
-            spinner.stopAnimation()
+        if isinstance(spinner, BusyIndicator):
+            spinner.stop()
 
     def updateBestGuess(self, taskType: str, output: str):
         if taskType == "simple":
