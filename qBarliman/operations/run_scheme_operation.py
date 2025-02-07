@@ -1,6 +1,4 @@
-import subprocess
-import time
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal, QProcess
 
 
 class RunSchemeOperation(QThread):
@@ -14,7 +12,7 @@ class RunSchemeOperation(QThread):
         self.schemeScriptPathString = schemeScriptPathString
         self.taskType = taskType
         self._isCanceled = False
-        self.process = None
+        self.process = QProcess()
         self.start_time = 0
 
         # Constants
@@ -29,6 +27,12 @@ class RunSchemeOperation(QThread):
         self.EVAL_FAILED = "Evaluation failed"
         self.THINKING = "???"
 
+        # Connect QProcess signals
+        self.process.finished.connect(self.handleProcessFinished)
+        self.process.readyReadStandardOutput.connect(self.readStandardOutput)
+        self.process.readyReadStandardError.connect(self.readStandardError)
+        self.process.errorOccurred.connect(self.handleProcessError)
+
     def run(self):
         if self._isCanceled:
             return
@@ -38,29 +42,35 @@ class RunSchemeOperation(QThread):
         self.statusUpdateSignal.emit(self.taskType, self.THINKING, self.THINKING_COLOR)
 
         try:
-            self.process = subprocess.Popen(
-                ["scheme", self.schemeScriptPathString],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            output, err = self.process.communicate()
-
-            if err:
-                output += f"\nErrors: {err}"
-
-            # Let the main window handle the output processing
-            self.finishedSignal.emit(self.taskType, output)
+            self.process.start("scheme", [self.schemeScriptPathString])
 
         except Exception as e:
             self.finishedSignal.emit(self.taskType, f"Error: {e}")
-        finally:
             self.spinnerUpdateSignal.emit(self.taskType, False)
 
     def cancel(self):
         self._isCanceled = True
-        if self.process:
-            try:
-                self.process.kill()
-            except Exception as e:
-                print(f"Error killing process: {e}")
+        if self.process.state() == QProcess.ProcessState.Running:
+            self.process.kill()
+
+    def handleProcessFinished(self):
+        output = self.process.readAllStandardOutput().data().decode()
+        err = self.process.readAllStandardError().data().decode()
+
+        if err:
+            output += f"\nErrors: {err}"
+
+        self.finishedSignal.emit(self.taskType, output)
+        self.spinnerUpdateSignal.emit(self.taskType, False)
+
+    def readStandardOutput(self):
+        output = self.process.readAllStandardOutput().data().decode()
+        self.finishedSignal.emit(self.taskType, output)
+
+    def readStandardError(self):
+        err = self.process.readAllStandardError().data().decode()
+        self.finishedSignal.emit(self.taskType, f"Errors: {err}")
+
+    def handleProcessError(self, error):
+        self.finishedSignal.emit(self.taskType, f"Process error: {error}")
+        self.spinnerUpdateSignal.emit(self.taskType, False)

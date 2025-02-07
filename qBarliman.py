@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys, signal
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QProcess
 from qBarliman.controllers.editor_window_controller import EditorWindowController
 
 def signal_handler(signum, frame):
