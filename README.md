@@ -1,6 +1,6 @@
 # qBarliman
 
-qBarliman is a cross-platform, python3, Qt6 port of Barliman, a joint work between [Will Byrd](https://github.com/webyrd/) and [Greg Rosenblatt](https://github.com/gregr).
+qBarliman is a cross-platform, python3, Qt6 fork of Barliman, a joint work between [Will Byrd](https://github.com/webyrd/) and [Greg Rosenblatt](https://github.com/gregr).
 
 The goal of this project is to increase availability and expandability of those wanting to learn and experiment with the miniKanren language and relatoinal interpreters.
 

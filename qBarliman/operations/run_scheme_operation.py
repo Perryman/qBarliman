@@ -1,3 +1,4 @@
+import time
 from PyQt6.QtCore import QThread, pyqtSignal, QProcess
 
 
@@ -12,7 +13,7 @@ class RunSchemeOperation(QThread):
         self.schemeScriptPathString = schemeScriptPathString
         self.taskType = taskType
         self._isCanceled = False
-        self.process = QProcess()
+        self.process = None  # Initialize as None
         self.start_time = 0
 
         # Constants
@@ -27,12 +28,6 @@ class RunSchemeOperation(QThread):
         self.EVAL_FAILED = "Evaluation failed"
         self.THINKING = "???"
 
-        # Connect QProcess signals
-        self.process.finished.connect(self.handleProcessFinished)
-        self.process.readyReadStandardOutput.connect(self.readStandardOutput)
-        self.process.readyReadStandardError.connect(self.readStandardError)
-        self.process.errorOccurred.connect(self.handleProcessError)
-
     def run(self):
         if self._isCanceled:
             return
@@ -42,6 +37,12 @@ class RunSchemeOperation(QThread):
         self.statusUpdateSignal.emit(self.taskType, self.THINKING, self.THINKING_COLOR)
 
         try:
+            self.process = QProcess()  # Create QProcess in the correct thread
+            self.process.finished.connect(self.handleProcessFinished)
+            self.process.readyReadStandardOutput.connect(self.readStandardOutput)
+            self.process.readyReadStandardError.connect(self.readStandardError)
+            self.process.errorOccurred.connect(self.handleProcessError)
+
             self.process.start("scheme", [self.schemeScriptPathString])
 
         except Exception as e:
@@ -50,7 +51,7 @@ class RunSchemeOperation(QThread):
 
     def cancel(self):
         self._isCanceled = True
-        if self.process.state() == QProcess.ProcessState.Running:
+        if self.process and self.process.state() == QProcess.ProcessState.Running:
             self.process.kill()
 
     def handleProcessFinished(self):
