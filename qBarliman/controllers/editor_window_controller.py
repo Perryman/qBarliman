@@ -21,6 +21,7 @@ from PyQt6.QtCore import (
     QThreadPool,
     QRunnable,
     pyqtSlot,
+    QProcess,
 )
 
 from qBarliman.operations.run_scheme_operation import RunSchemeOperation
@@ -61,6 +62,7 @@ class EditorWindowController(QMainWindow):
         self.cleanup_timer.timeout.connect(self.cleanup)
         self.initialization_complete = True  # Set flag after initialization
         self.scheme_operations = []  # Initialize scheme_operations list
+        self.processes = []  # Initialize processes list
 
     def closeEvent(self, event):
         """Clean up threads before closing, but don't wait for them to finish."""
@@ -450,6 +452,15 @@ class EditorWindowController(QMainWindow):
             if hasattr(op, "wait"):
                 op.wait()
         self.processingQueue.clear()
+        self.terminate_all_processes()
+
+    def terminate_all_processes(self):
+        for process in self.processes:
+            if process.state() == QProcess.ProcessState.Running:
+                process.terminate()
+                process.waitForFinished(3000)  # Wait for 3 seconds before force killing
+                if process.state() == QProcess.ProcessState.Running:
+                    process.kill()
 
     def handleOperationFinished(self, taskType: str, output: str):
         """Handle operation completion - runs on main thread"""
