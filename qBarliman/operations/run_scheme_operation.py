@@ -2,6 +2,7 @@ import subprocess
 import time
 from PyQt6.QtCore import QThread, pyqtSignal
 
+
 class RunSchemeOperation(QThread):
     # Define signals for different types of updates
     finishedSignal = pyqtSignal(str, str)  # (taskType, output)
@@ -38,19 +39,19 @@ class RunSchemeOperation(QThread):
 
         try:
             self.process = subprocess.Popen(
-                ['scheme', self.schemeScriptPathString],
+                ["scheme", self.schemeScriptPathString],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
             )
             output, err = self.process.communicate()
-            
+
             if err:
                 output += f"\nErrors: {err}"
-            
+
             # Let the main window handle the output processing
             self.finishedSignal.emit(self.taskType, output)
-            
+
         except Exception as e:
             self.finishedSignal.emit(self.taskType, f"Error: {e}")
         finally:

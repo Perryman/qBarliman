@@ -31,6 +31,13 @@ pip install -r requirements.txt
 python3 qBarliman
 ```
 
+### DPI:
+Qt uses your QT_SCALE_FACTOR environment variable for DPI scaling.
+The following example launches at 1.5x scale.
+```
+QT_SCALE_FACTOR=1.5 && python qBarliman.py
+```
+
 ---------------------------------------
 
 ## Project Structure

@@ -1,4 +1,5 @@
 .DS_Store
 cocoa/Barliman.xcodeproj/project.xcworkspace/xcuserdata/
-**/__pycache__/
+**__pycache__
 **/cocoa
+**.vscode

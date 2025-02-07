@@ -1,59 +1,74 @@
 import os
-import subprocess
-import time
 import traceback
 
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QTextEdit, QLineEdit, QLabel, QVBoxLayout, QGridLayout, 
-    QSplitter, QProgressBar, QMessageBox, QHBoxLayout
+    QMainWindow,
+    QWidget,
+    QTextEdit,
+    QLineEdit,
+    QLabel,
+    QVBoxLayout,
+    QGridLayout,
+    QSplitter,
+    QHBoxLayout,
 )
 from PyQt6.QtGui import QFont, QTextCursor
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 
 from qBarliman.operations.run_scheme_operation import RunSchemeOperation
-from qBarliman.utils.constrained_splitter import ConstrainedSplitter 
-from qBarliman.widgets.scheme_editor_text_view import SchemeEditorTextView
+from PyQt6.QtGui import QFont
+from PyQt6.QtCore import QTimer, Qt
 from qBarliman.widgets.spinner_widget import SpinnerWidget
+from qBarliman.widgets.scheme_editor_text_view import SchemeEditorTextView
+from qBarliman.utils.constrained_splitter import ConstrainedSplitter
+from qBarliman.constants import *  # warn, good, info, logging fns from here
+from qBarliman.templates import *
+from qBarliman.utils.rainbowp import rainbowp
 
 
 class EditorWindowController(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Barliman")
+        self.initialization_complete = False  # Add a flag
+        self.setWindowTitle("qBarliman")
         self.setupUI()
-        self.runCodeTimer = QTimer(self)
+        self.runCodeTimer = QTimer()  # Corrected initialization
+        self.runCodeTimer.setParent(self)  # Corrected parent setting
         self.runCodeTimer.setSingleShot(True)
-        self.runCodeTimer.timeout.connect(self.runCodeFromEditPane)
+        self.runCodeTimer.timeout.connect(self.executeRunCodeTimer)
         self.interpreter_code = ""
         self.processingQueue = []  # For concurrency, consider using QThreadPool
         self.schemeOperationAllTests = None
         self.loadInterpreterCode("interp")
         self.cleanup_timer = QTimer(self)
         self.cleanup_timer.timeout.connect(self.cleanup)
+        self.initialization_complete = True  # Set flag after initialization
 
     def setupUI(self):
         central = QWidget(self)
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
-        default_font = QFont("Monaco", 14)
+        default_font = QFont("Monospace", 16)
+        default_font.setStyleHint(QFont.StyleHint.Monospace)
 
         # --- Text Views (equivalent to NSTextView) ---
         self.schemeDefinitionView = SchemeEditorTextView(self)
         self.schemeDefinitionView.setPlaceholderText("Enter Scheme definitions...")
         self.schemeDefinitionView.setFont(default_font)
-        self.schemeDefinitionView.setText(
-            "(define ,A\n"
-            "  (lambda ,B\n"
-            ",C))\n\n"
-        )
-        # Disable rich text to mimic Swift's smart quotes disabled
+        self.schemeDefinitionView.setText("\n".join(DEFAULT_DEFINITIONS))
+        # Disable rich text to help prevent unicode quotes
         self.schemeDefinitionView.setAcceptRichText(False)
-        self.schemeDefinitionView.textChanged.connect(self.setupRunCodeFromEditPaneTimer)
-
-        self.bestGuessView = SchemeEditorTextView(self)
-        self.bestGuessView.setPlaceholderText("Best guess output...")
+        self.schemeDefinitionView.textChanged.connect(
+            self.setupRunCodeFromEditPaneTimer
+        )
+        self.bestGuessView = QTextEdit(self)
+        self.bestGuessView.setReadOnly(True)
         self.bestGuessView.setFont(default_font)
-        self.bestGuessView.setAcceptRichText(False)
+        self.bestGuessView.setPlaceholderText("No best guess available.")
+        self.bestGuessSpinner = SpinnerWidget(self)
+        self.errorOutputView = QTextEdit(self)  # New widget for error output
+        self.errorOutputView.setReadOnly(True)
+        self.errorOutputView.hide()  # Initially hidden
 
         # --- Splitter (equivalent to NSSplitView) ---
         self.definitionAndBestGuessSplitView = ConstrainedSplitter(
@@ -61,12 +76,13 @@ class EditorWindowController(QMainWindow):
         )
         self.definitionAndBestGuessSplitView.addWidget(self.schemeDefinitionView)
         self.definitionAndBestGuessSplitView.addWidget(self.bestGuessView)
+        self.definitionAndBestGuessSplitView.addWidget(self.errorOutputView)
         layout.addWidget(self.definitionAndBestGuessSplitView)
 
         # --- Progress Indicators (equivalent to NSProgressIndicator) ---
         self.schemeDefinitionSpinner = SpinnerWidget(self)
         self.bestGuessSpinner = SpinnerWidget(self)
-        
+
         # Add spinners to layout with proper alignment
         spinner_layout = QHBoxLayout()
         spinner_layout.addStretch()
@@ -75,13 +91,17 @@ class EditorWindowController(QMainWindow):
 
         # --- Status Labels ---
         self.definitionStatusLabel = QLabel("", self)
-        self.definitionStatusLabel.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | 
-                                                         Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        self.definitionStatusLabel.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
         layout.addWidget(self.definitionStatusLabel)
-        
+
         self.bestGuessStatusLabel = QLabel("", self)
-        self.bestGuessStatusLabel.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | 
-                                                        Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        self.bestGuessStatusLabel.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
         layout.addWidget(self.bestGuessStatusLabel)
 
         # --- Test Fields (equivalent to NSTextField) ---
@@ -105,8 +125,10 @@ class EditorWindowController(QMainWindow):
             grid.addWidget(expected_output, i, 2)
 
             status_label = QLabel("", self)
-            status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | 
-                                               Qt.TextInteractionFlag.TextSelectableByKeyboard)
+            status_label.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+                | Qt.TextInteractionFlag.TextSelectableByKeyboard
+            )
             self.testStatusLabels.append(status_label)
             grid.addWidget(status_label, i, 3)
 
@@ -118,75 +140,54 @@ class EditorWindowController(QMainWindow):
         layout.addLayout(grid)
 
         # --- Default Test Examples ---
-        default_test_inputs = [
-            "(append '() '5)",
-            "(append '(a) '6)",
-            "(append '(e f) '(g h))",
-            "",
-            "",
-            ""
-        ]
-        default_test_expected = [
-            "5",
-            "'(a . 6)",
-            "'(e f g h)",
-            "",
-            "",
-            ""
-        ]
+        default_test_inputs = DEFAULT_TEST_INPUTS
+        default_test_expected = DEFAULT_TEST_EXPECTED_OUTPUTS
         for i in range(6):
             self.testInputs[i].setText(default_test_inputs[i])
             self.testExpectedOutputs[i].setText(default_test_expected[i])
 
-        # --- Tab Order Fix (Test 3 Expected -> Test 4 Input) ---
-        QWidget.setTabOrder(self.testExpectedOutputs[2], self.testInputs[3])
+        # # --- Tab Order Fix (Test 3 Expected -> Test 4 Input) ---
+        # QWidget.setTabOrder(self.testExpectedOutputs[2], self.testInputs[3])
 
     # --- Timer and Code Execution Methods ---
+
     def setupRunCodeFromEditPaneTimer(self):
-        # Restart timer with a 500ms delay on text changes
-        self.runCodeTimer.start(500)
+        if self.initialization_complete:  # Check the flag
+            self.runCodeTimer.stop()
+            self.runCodeTimer.start(1000)
 
     def runCodeFromEditPane(self):
-        print("Running code from edit pane...")
-        tmp_dir = os.path.join(os.environ.get("TMP", "/tmp"), "barliman_tmp")
-        os.makedirs(tmp_dir, exist_ok=True)
-        print(f"runCodeFromEditPane: Temporary directory at {tmp_dir}")
-        
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        # Old paths:
-        # mk_vicare_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-        #                              "qBarliman", "minikanren", "core", "mk", "mk-vicare.scm")
-        # mk_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-        #                         "qBarliman", "minikanren", "core", "mk", "mk.scm")
-        # New correct paths (assuming mk files are located under "minikanren/mk/"):
-        mk_vicare_path = os.path.join(base_dir, "qBarliman", "minikanren", "core", "mk-vicare.scm")
-        mk_path = os.path.join(base_dir, "qBarliman", "minikanren", "core", "mk.scm")
-        print(f"runCodeFromEditPane: mk_vicare_path: {mk_vicare_path}, mk_path: {mk_path}")
-        
+        fn = "runCodeFromEditPane"
+        info(self.__class__.__name__)
+        info("Running code from edit pane...")
+        info(f"{fn}: Temporary directory at {TMP_DIR}")
+        info(f"{fn}: mk_vicare_path: {MK_VICARE}")
+        info(f"{fn}: mk_path: {MK}")
+
         definitionText = self.schemeDefinitionView.toPlainText()
         interp_string = self.interpreter_code
-        
-        query_simple = self.makeQuerySimpleForMondoSchemeFileString(
-            interp_string, 
-            mk_vicare_path_string=mk_vicare_path,
-            mk_path_string=mk_path
-        )
+
+        query_simple = self.makeQuerySimpleForMondoSchemeFileString(interp_string)
         query_alltests = self.makeAllTestsQueryString()
-        print("runCodeFromEditPane: Query strings generated")
-        
+        info(f"{fn}: Query strings generated")
+
         # Write temporary files
-        with open(os.path.join(tmp_dir, "barliman-query-simple.scm"), "w") as f:
+        with open(os.path.join(TMP_DIR, BARLIMAN_QUERY_SIMPLE_SCM), "w") as f:
             f.write(query_simple)
-            print("runCodeFromEditPane: Written barliman-query-simple.scm")
-        with open(os.path.join(tmp_dir, "barliman-query-alltests.scm"), "w") as f:
+            info(f"{fn}: Written {BARLIMAN_QUERY_SIMPLE_SCM}")
+        with open(os.path.join(TMP_DIR, BARLIMAN_QUERY_ALLTESTS_SCM), "w") as f:
             f.write(query_alltests)
-            print("runCodeFromEditPane: Written barliman-query-alltests.scm")
-        
+            info(f"{fn}: Written {BARLIMAN_QUERY_ALLTESTS_SCM}")
+
         # Create RunSchemeOperations
-        runSchemeOpSimple = RunSchemeOperation(self, os.path.join(tmp_dir, "barliman-query-simple.scm"), "simple")
-        runSchemeOpAllTests = RunSchemeOperation(self, os.path.join(tmp_dir, "barliman-query-alltests.scm"), "allTests")
-        print("runCodeFromEditPane: Created RunSchemeOperation instances")
-        
+        runSchemeOpSimple = RunSchemeOperation(
+            self, os.path.join(TMP_DIR, BARLIMAN_QUERY_SIMPLE_SCM), "simple"
+        )
+        runSchemeOpAllTests = RunSchemeOperation(
+            self, os.path.join(TMP_DIR, BARLIMAN_QUERY_ALLTESTS_SCM), "allTests"
+        )
+        info(f"{fn}: Created RunSchemeOperation instances")
+
         # Connect signals
         runSchemeOpSimple.finishedSignal.connect(self.handleOperationFinished)
         runSchemeOpSimple.statusUpdateSignal.connect(self.handleStatusUpdate)
@@ -195,7 +196,7 @@ class EditorWindowController(QMainWindow):
         runSchemeOpAllTests.finishedSignal.connect(self.handleOperationFinished)
         runSchemeOpAllTests.statusUpdateSignal.connect(self.handleStatusUpdate)
         runSchemeOpAllTests.spinnerUpdateSignal.connect(self.handleSpinnerUpdate)
-        
+
         # Add operations to processing queue
         # Cancel existing operations
         for op in self.processingQueue:
@@ -204,7 +205,7 @@ class EditorWindowController(QMainWindow):
         self.processingQueue.clear()
 
         self.processingQueue = [runSchemeOpSimple, runSchemeOpAllTests]
-        print("runCodeFromEditPane: Starting operations")
+        info(f"{fn}: Starting operations")
 
         # Start spinners
         self.startSpinner(self.schemeDefinitionSpinner)
@@ -222,7 +223,7 @@ class EditorWindowController(QMainWindow):
             if op.isRunning():
                 op.cancel()
         self.processingQueue.clear()
-        print("Cleanup complete.")
+        info("Cleanup complete.")
         # Stop all spinners
         self.stopSpinner(self.schemeDefinitionSpinner)
         self.stopSpinner(self.bestGuessSpinner)
@@ -230,11 +231,7 @@ class EditorWindowController(QMainWindow):
             self.stopSpinner(spinner)
 
     def loadInterpreterCode(self, interpFileName: str):
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        # Old path:
-        # file_path = os.path.join(base_dir, "qBarliman", "minikanren", "core", f"{interpFileName}.scm")
-        # New correct path:
-        file_path = os.path.join(base_dir, "qBarliman", "minikanren", "rel-interp", f"{interpFileName}.scm")
+        file_path = os.path.join(REL_INTERP_DIR, f"{interpFileName}.scm")
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 self.interpreter_code = f.read()
@@ -249,13 +246,12 @@ class EditorWindowController(QMainWindow):
         # Ported from Swift's getInterpreterCode()
         return self.interpreter_code
 
-
     # --- Cleanup ---
     def cleanup(self):
-        print("cleaning up!")
+        info("cleaning up!")
         # Stop the timer used for delayed code execution
         self.runCodeTimer.stop()
-        
+
         # Cancel all operations in the processing queue.
         # Assuming each op in self.processingQueue is a QThread or has a cancel() method.
         for op in self.processingQueue:
@@ -263,27 +259,26 @@ class EditorWindowController(QMainWindow):
                 op.cancel()  # if defined in RunSchemeOperation
             except AttributeError:
                 pass
-        
+
         # Wait for any operations that support waiting (e.g., QThread)
         for op in self.processingQueue:
-            if hasattr(op, 'wait'):
+            if hasattr(op, "wait"):
                 op.wait()
-        
-        print(f"Operation count after cleanup: {len(self.processingQueue)}")
+
+        info(f"Operation count after cleanup: {len(self.processingQueue)}")
         if self.processingQueue:
-            print("$$$$  Oh noes!  Looks like there is a Scheme process still running!")
+            warn("$$$$  Oh noes!  Looks like there is a Scheme process still running!")
+            # Kill all subprocesses
+            for op in self.processingQueue:
+                try:
+                    op.process.kill()
+                except AttributeError:
+                    warn(f"$$$$  Could not kill process for {op}")
         # Stop all spinners
         self.stopSpinner(self.schemeDefinitionSpinner)
         self.stopSpinner(self.bestGuessSpinner)
         for spinner in self.testSpinners:
             self.stopSpinner(spinner)
-
-    # --- Timer for Code Execution ---
-    def setupRunCodeFromEditPaneTimer(self):
-        # Invalidate any existing timer and start a new one with 1 second delay,
-        # matching the Swift behavior.
-        self.runCodeTimer.stop()
-        self.runCodeTimer.start(1000)  # 1000 milliseconds = 1 second
 
     # --- Text Change Handlers ---
     # Although the QTextEdit and QLineEdit signals are already connected to setupRunCodeFromEditPaneTimer,
@@ -296,57 +291,70 @@ class EditorWindowController(QMainWindow):
         print("@@@@@@@@@@@@@@@@@@@ controlTextDidChange")
         self.setupRunCodeFromEditPaneTimer()
 
+    def makeQuerySimpleForMondoSchemeFileString(self, interp_string: str) -> str:
 
-
-    def makeQuerySimpleForMondoSchemeFileString(self, interp_string: str, mk_vicare_path_string: str, mk_path_string: str) -> str:
-
-
-
-        
-        # Build load commands
-        load_mk_vicare = f"(load \"{mk_vicare_path_string}\")"
-        load_mk = f"(load \"{mk_path_string}\")"
         # Get the scheme definition text
         definitionText = self.schemeDefinitionView.toPlainText()
         # Create the simple query using makeQueryString (simple=True)
-        querySimple = self.makeQueryString(definitionText, body=",_", expectedOut="q", simple=True, name="-simple")
-        full_string = f"{load_mk_vicare}\n{load_mk}\n{interp_string}\n{querySimple}"
-        return full_string
+        querySimple = self.makeQueryString(
+            definitionText, body=",_", expectedOut="q", simple=True, name="-simple"
+        )
+
+        return QUERY_SIMPLE_T.substitute(
+            load_mk_vicare=LOAD_MK_VICARE,
+            load_mk=LOAD_MK,
+            interp_string=interp_string,
+            query_simple=querySimple,
+        )
+
     def makeAllTestsQueryString(self) -> str:
         # Gather test inputs and outputs
         processTest = [False] * 6
         testInputs = [""] * 6
         testOutputs = [""] * 6
         for i in range(6):
-            processTest[i] = (self.testInputs[i].text() != "" and 
-                            self.testExpectedOutputs[i].text() != "")
+            processTest[i] = (
+                self.testInputs[i].text() != ""
+                and self.testExpectedOutputs[i].text() != ""
+            )
             testInputs[i] = self.testInputs[i].text() if processTest[i] else ""
-            testOutputs[i] = self.testExpectedOutputs[i].text() if processTest[i] else ""
-        allTestInputs = (testInputs[0] + " " + testInputs[1] + " " +
-                        testInputs[2] + " " + testInputs[3] + " " +
-                        testInputs[4] + " " + testInputs[5] + " ")
-        allTestOutputs = (testOutputs[0] + " " + testOutputs[1] + " " +
-                        testOutputs[2] + " " + testOutputs[3] + " " +
-                        testOutputs[4] + " " + testOutputs[5] + " ")
+            testOutputs[i] = (
+                self.testExpectedOutputs[i].text() if processTest[i] else ""
+            )
+        allTestInputs = (
+            testInputs[0]
+            + " "
+            + testInputs[1]
+            + " "
+            + testInputs[2]
+            + " "
+            + testInputs[3]
+            + " "
+            + testInputs[4]
+            + " "
+            + testInputs[5]
+            + " "
+        )
+        allTestOutputs = (
+            testOutputs[0]
+            + " "
+            + testOutputs[1]
+            + " "
+            + testOutputs[2]
+            + " "
+            + testOutputs[3]
+            + " "
+            + testOutputs[4]
+            + " "
+            + testOutputs[5]
+            + " "
+        )
 
         definitionText = self.schemeDefinitionView.toPlainText()
 
-        # Load query string parts from files
-        import os
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        part1_path = os.path.join(base_dir, "mk-and-rel-interp", "interp-alltests-query-string-part-1.scm")
-        part2_path = os.path.join(base_dir, "mk-and-rel-interp", "interp-alltests-query-string-part-2.scm")
-        try:
-            with open(part1_path, "r", encoding="utf-8") as f:
-                alltests_string_part_1 = f.read()
-        except Exception:
-            alltests_string_part_1 = ""
-        try:
-            with open(part2_path, "r", encoding="utf-8") as f:
-                alltests_string_part_2 = f.read()
-        except Exception:
-            alltests_string_part_2 = ""
-        
+        alltests_string_part_1 = ALLTESTS_STRING_PART_1
+        alltests_string_part_2 = ALLTESTS_STRING_PART_2
+
         eval_flags_fast = "(allow-incomplete-search)"
         eval_flags_complete = "(disallow-incomplete-search)"
         eval_string_fast = f"(begin {eval_flags_fast} (results))"
@@ -365,91 +373,96 @@ class EditorWindowController(QMainWindow):
             f"    results-fast)))"
         )
 
-
         full_string = f";; allTests\n{allTestWriteString}"
 
-        print(f"Generated allTestWriteString:\n{full_string}")
+        print(f"Generated allTestWriteString:\n{rainbowp(full_string)}")
         return full_string
 
-    def makeQueryString(self, defns: str, body: str, expectedOut: str, simple: bool, name: str) -> str:
+    def makeQueryString(
+        self, defns: str, body: str, expectedOut: str, simple: bool, name: str
+    ) -> str:
         if simple:
             parse_ans_string = (
                 f"(define (parse-ans{name}) (run 1 (q)\n"
-                f" (let ((g1 (gensym \"g1\")) (g2 (gensym \"g2\")) (g3 (gensym \"g3\")) "
-                f"(g4 (gensym \"g4\")) (g5 (gensym \"g5\")) (g6 (gensym \"g6\")) "
-                f"(g7 (gensym \"g7\")) (g8 (gensym \"g8\")) (g9 (gensym \"g9\")) "
-                f"(g10 (gensym \"g10\")) (g11 (gensym \"g11\")) (g12 (gensym \"g12\")) "
-                f"(g13 (gensym \"g13\")) (g14 (gensym \"g14\")) (g15 (gensym \"g15\")) "
-                f"(g16 (gensym \"g16\")) (g17 (gensym \"g17\")) (g18 (gensym \"g18\")) "
-                f"(g19 (gensym \"g19\")) (g20 (gensym \"g20\")))\n"
+                f' (let ((g1 (gensym "g1")) (g2 (gensym "g2")) (g3 (gensym "g3")) '
+                f'(g4 (gensym "g4")) (g5 (gensym "g5")) (g6 (gensym "g6")) '
+                f'(g7 (gensym "g7")) (g8 (gensym "g8")) (g9 (gensym "g9")) '
+                f'(g10 (gensym "g10")) (g11 (gensym "g11")) (g12 (gensym "g12")) '
+                f'(g13 (gensym "g13")) (g14 (gensym "g14")) (g15 (gensym "g15")) '
+                f'(g16 (gensym "g16")) (g17 (gensym "g17")) (g18 (gensym "g18")) '
+                f'(g19 (gensym "g19")) (g20 (gensym "g20")))\n'
                 f" (fresh (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z _) (parseo `(begin {defns} {body}))))))"
             )
         else:
             parse_ans_string = (
                 f"(define (parse-ans{name}) (run 1 (q)\n"
-                f" (let ((g1 (gensym \"g1\")) (g2 (gensym \"g2\")) (g3 (gensym \"g3\")) "
-                f"(g4 (gensym \"g4\")) (g5 (gensym \"g5\")) (g6 (gensym \"g6\")) "
-                f"(g7 (gensym \"g7\")) (g8 (gensym \"g8\")) (g9 (gensym \"g9\")) "
-                f"(g10 (gensym \"g10\")) (g11 (gensym \"g11\")) (g12 (gensym \"g12\")) "
-                f"(g13 (gensym \"g13\")) (g14 (gensym \"g14\")) (g15 (gensym \"g15\")) "
-                f"(g16 (gensym \"g16\")) (g17 (gensym \"g17\")) (g18 (gensym \"g18\")) "
-                f"(g19 (gensym \"g19\")) (g20 (gensym \"g20\")))\n"
+                f' (let ((g1 (gensym "g1")) (g2 (gensym "g2")) (g3 (gensym "g3")) '
+                f'(g4 (gensym "g4")) (g5 (gensym "g5")) (g6 (gensym "g6")) '
+                f'(g7 (gensym "g7")) (g8 (gensym "g8")) (g9 (gensym "g9")) '
+                f'(g10 (gensym "g10")) (g11 (gensym "g11")) (g12 (gensym "g12")) '
+                f'(g13 (gensym "g13")) (g14 (gensym "g14")) (g15 (gensym "g15")) '
+                f'(g16 (gensym "g16")) (g17 (gensym "g17")) (g18 (gensym "g18")) '
+                f'(g19 (gensym "g19")) (g20 (gensym "g20")))\n'
                 f" (fresh (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z _) "
                 f"(fresh (names dummy-expr) (extract-nameso `( {defns} ) names) (parseo `((lambda ,names {body}) ,dummy-expr)))))))"
             )
+        # Load the eval query string parts from constants
+        eval_string_part_1 = EVAL_STRING_PART_1
+        eval_string_part_2 = EVAL_STRING_PART_2
 
-        # Load the eval query string parts from files
-        
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        part1_path = os.path.join(base_dir, "mk-and-rel-interp", "interp-eval-query-string-part-1.swift")
-        part2_path = os.path.join(base_dir, "mk-and-rel-interp", "interp-eval-query-string-part-2.swift")
-        try:
-            with open(part1_path, "r", encoding="utf-8") as f:
-                eval_string_part_1 = f.read()
-        except Exception:
-            print("!!!!!  LOAD_ERROR -- can't load eval_string_part_1")
-            eval_string_part_1 = ""
-        try:
-            with open(part2_path, "r", encoding="utf-8") as f:
-                eval_string_part_2 = f.read()
-        except Exception:
-            print("!!!!!  LOAD_ERROR -- can't load eval_string_part_2")
-            eval_string_part_2 = ""
-
+        print(f"{INFO}{eval_string_part_1=}")
+        print(f"{INFO}{eval_string_part_2=}")
         eval_string = (
-            eval_string_part_1 + "\n" +
-            "        (== `( " + defns + " ) defn-list)\n" +
-            eval_string_part_2 + "\n" +
-            " (evalo `(begin " + defns + " " + body + " ) " + expectedOut + "))))"
+            eval_string_part_1
+            + "\n"
+            + "        (== `( "
+            + defns
+            + " ) defn-list)\n"
+            + eval_string_part_2
+            + "\n"
+            + " (evalo `(begin "
+            + defns
+            + " "
+            + body
+            + " ) "
+            + expectedOut
+            + "))))"
         )
-        
+
         eval_flags_fast = "(allow-incomplete-search)"
         eval_flags_complete = "(disallow-incomplete-search)"
-        
+
         eval_string_fast = f"(begin {eval_flags_fast} {eval_string})"
         eval_string_complete = f"(begin {eval_flags_complete} {eval_string})"
-        eval_string_both = (f"(let ((results-fast {eval_string_fast}))\n"
-                            f"  (if (null? results-fast)\n"
-                            f"    {eval_string_complete}\n"
-                            f"     results-fast))")
-        
+        eval_string_both = (
+            f"(let ((results-fast {eval_string_fast}))\n"
+            f"  (if (null? results-fast)\n"
+            f"    {eval_string_complete}\n"
+            f"     results-fast))"
+        )
+
         define_ans_string = (
             f"(define (query-val{name})\n"
             "  (if (null? (parse-ans" + name + "))\n"
             "      'parse-error\n"
             "      " + eval_string_both + "))   "
         )
-        
-        full_string = ((";; simple query" if simple else ";; individual test query") + "\n\n" +
-                    (parse_ans_string) + "\n\n" +
-                    define_ans_string + "\n\n")
-        print(f"Generated query string:\n{full_string}\n")
+
+        full_string = (
+            (";; simple query" if simple else ";; individual test query")
+            + "\n\n"
+            + (parse_ans_string)
+            + "\n\n"
+            + define_ans_string
+            + "\n\n"
+        )
+        print(f"Generated query string:\n{rainbowp(full_string)}\n")
         return full_string
 
     def startSpinner(self, spinner):
         if isinstance(spinner, SpinnerWidget):
             spinner.startAnimation()
-        
+
     def stopSpinner(self, spinner):
         if isinstance(spinner, SpinnerWidget):
             spinner.stopAnimation()
@@ -458,37 +471,38 @@ class EditorWindowController(QMainWindow):
         if taskType == "simple":
             self.bestGuessView.setPlainText(output)
             self.stopSpinner(self.bestGuessSpinner)
-            
+
     def updateAllTestsResults(self, taskType: str, output: str):
         if taskType == "allTests":
             try:
-                lines = output.strip().split('\n')
-                results = [line.split(':', 1)[1].strip() for line in lines if ":" in line]
+                lines = output.strip().split("\n")
+                results = [
+                    line.split(":", 1)[1].strip() for line in lines if ":" in line
+                ]
                 print(f"Extracted results: {results}")
 
                 for i in range(min(6, len(results))):
                     self.testStatusLabels[i].setText(results[i])
-                    if "ERROR" in results[i]:
+                    if "ERROR" in results[i] or "Exception" in results[i]:
                         self.testStatusLabels[i].setStyleSheet("color: red;")
+                        self.errorOutputView.setPlainText(output)
+                        self.errorOutputView.show()
                     else:
                         self.testStatusLabels[i].setStyleSheet("color: green;")
                     self.stopSpinner(self.testSpinners[i])
             except Exception as e:
                 print(f"Error processing all tests results: {e}")
                 traceback.print_exc()
+                self.errorOutputView.setPlainText(f"Error processing results: {e}")
+                self.errorOutputView.show()
             finally:
                 for spinner in self.testSpinners:
                     self.stopSpinner(spinner)
                 self.stopSpinner(self.schemeDefinitionSpinner)
-            
-    def setupRunCodeFromEditPaneTimer(self):
-        if not hasattr(self, "runCodeTimer"):
-            self.runCodeTimer = QTimer(self)
-            self.runCodeTimer.setSingleShot(True)
-        if self.runCodeTimer.isActive():
-            self.runCodeTimer.stop()
-        self.runCodeTimer.start(1000)
-        
+                if self.runCodeTimer.isActive():
+                    self.runCodeTimer.stop()
+                self.runCodeTimer.start(1000)
+
     def cleanup(self):
         if self.runCodeTimer.isActive():
             self.runCodeTimer.stop()
@@ -502,7 +516,7 @@ class EditorWindowController(QMainWindow):
         self.stopSpinner(self.bestGuessSpinner)
         for spinner in self.testSpinners:
             self.stopSpinner(spinner)
-        
+
     def cancel_all_operations(self):
         # Cancel and join all operations
         for op in self.processingQueue:
@@ -521,14 +535,21 @@ class EditorWindowController(QMainWindow):
             self.bestGuessView.setPlainText(output)
             self.stopSpinner(self.bestGuessSpinner)
         elif taskType == "allTests":
-            self.updateAllTestsResults(taskType, output)  # Changed from handleAllTestsResults to updateAllTestsResults
+            self.updateAllTestsResults(
+                taskType, output
+            )  # Changed from handleAllTestsResults to updateAllTestsResults
+        elif taskType == "error":  # Handle errors
+            self.errorOutputView.setPlainText(output)
+            self.errorOutputView.show()  # Show error output view when errors occur
 
     def handleStatusUpdate(self, taskType: str, status: str, color: str):
         """Handle status updates - runs on main thread"""
         if taskType == "simple":
             self.definitionStatusLabel.setText(status)
             self.definitionStatusLabel.setStyleSheet(f"color: {color};")
-        # ...handle other status updates...
+        elif taskType == "allTests":
+            self.bestGuessStatusLabel.setText(status)
+            self.bestGuessStatusLabel.setStyleSheet(f"color: {color};")
 
     def handleSpinnerUpdate(self, taskType: str, isSpinning: bool):
         """Handle spinner state changes - runs on main thread"""
@@ -537,4 +558,13 @@ class EditorWindowController(QMainWindow):
                 self.startSpinner(self.schemeDefinitionSpinner)
             else:
                 self.stopSpinner(self.schemeDefinitionSpinner)
-        # ...handle other spinners...
+        elif taskType == "allTests":
+            if isSpinning:
+                self.startSpinner(self.bestGuessSpinner)
+            else:
+                self.stopSpinner(self.bestGuessSpinner)
+
+    def executeRunCodeTimer(self):
+        """Run code from the edit pane after a delay."""
+        self.runCodeTimer.stop()
+        self.runCodeFromEditPane()

@@ -41,15 +41,21 @@ class SpinnerWidget(QWidget):
         painter.rotate(self.angle)
         painter.translate(-rect.center())
         
-        gradient_stops = [
-            (0.0, QColor(0, 0, 0, 255)),
-            (0.5, QColor(0, 0, 0, 127)),
-            (1.0, QColor(0, 0, 0, 0))
+        colors = [
+            QColor(255, 0, 0, 255),  # Red
+            QColor(255, 127, 0, 255),  # Orange
+            QColor(255, 255, 0, 255),  # Yellow
+            QColor(0, 255, 0, 255),  # Green
+            QColor(0, 0, 255, 255),  # Blue
+            QColor(75, 0, 130, 255),  # Indigo
+            QColor(148, 0, 211, 255),  # Violet
+            QColor(255, 0, 0, 127)  # Red (faded)
         ]
         
         for i in range(8):
-            color = QColor(0, 0, 0, int(255 * (1 - i/8)))
-            painter.fillRect(rect, color)
+            painter.setBrush(colors[i])
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRect(rect)
             painter.rotate(45)
 
     def sizeHint(self):
