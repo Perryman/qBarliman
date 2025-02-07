@@ -6,9 +6,10 @@ The goal of this project is to increase availability and expandability of those 
 
 For more details on Barliman, see the [miniKanren relational interpreter README](minikanren/rel-interp/README.md).
 
-# <span style="color:red">STATUS: non-functional</span>
-- <span style="color:red">major refactoring in progress</span>
-- <span style="color:red">see [TODO.md](TODO.md)</span>
+> [!WARNING]  
+> # STATUS: unstable, not ready for use
+> - major refactoring in progress
+> - see [TODO.md](TODO.md)
 
 ---------------------------------------
 
