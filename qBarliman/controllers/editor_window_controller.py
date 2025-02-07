@@ -13,7 +13,15 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
 )
 from PyQt6.QtGui import QFont, QTextCursor
-from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import (
+    QTimer,
+    Qt,
+    QThread,
+    pyqtSignal,
+    QThreadPool,
+    QRunnable,
+    pyqtSlot,
+)
 
 from qBarliman.operations.run_scheme_operation import RunSchemeOperation
 from PyQt6.QtGui import QFont
@@ -24,6 +32,16 @@ from qBarliman.utils.constrained_splitter import ConstrainedSplitter
 from qBarliman.constants import *  # warn, good, info, logging fns from here
 from qBarliman.templates import *
 from qBarliman.utils.rainbowp import rainbowp
+
+
+class RunSchemeWorker(QRunnable):
+    def __init__(self, operation):
+        super().__init__()
+        self.operation = operation
+
+    @pyqtSlot()
+    def run(self):
+        self.operation.start()
 
 
 class EditorWindowController(QMainWindow):
@@ -37,12 +55,17 @@ class EditorWindowController(QMainWindow):
         self.runCodeTimer.setSingleShot(True)
         self.runCodeTimer.timeout.connect(self.executeRunCodeTimer)
         self.interpreter_code = ""
-        self.processingQueue = []  # For concurrency, consider using QThreadPool
-        self.schemeOperationAllTests = None
+        self.threadPool = QThreadPool()  # Initialize QThreadPool
         self.loadInterpreterCode("interp")
         self.cleanup_timer = QTimer(self)
         self.cleanup_timer.timeout.connect(self.cleanup)
         self.initialization_complete = True  # Set flag after initialization
+        self.scheme_operations = []  # Initialize scheme_operations list
+
+    def closeEvent(self, event):
+        """Clean up threads before closing, but don't wait for them to finish."""
+        self.cleanup()
+        event.accept()
 
     def setupUI(self):
         central = QWidget(self)
@@ -152,8 +175,11 @@ class EditorWindowController(QMainWindow):
     # --- Timer and Code Execution Methods ---
 
     def setupRunCodeFromEditPaneTimer(self):
-        if self.initialization_complete:  # Check the flag
+        if self.initialization_complete:
             self.runCodeTimer.stop()
+            for op in self.scheme_operations:  # Cancel existing operations
+                op.cancel()
+            self.scheme_operations = []  # Clear the list
             self.runCodeTimer.start(1000)
 
     def runCodeFromEditPane(self):
@@ -197,14 +223,13 @@ class EditorWindowController(QMainWindow):
         runSchemeOpAllTests.statusUpdateSignal.connect(self.handleStatusUpdate)
         runSchemeOpAllTests.spinnerUpdateSignal.connect(self.handleSpinnerUpdate)
 
-        # Add operations to processing queue
-        # Cancel existing operations
-        for op in self.processingQueue:
-            if op.isRunning():
-                op.cancel()
-        self.processingQueue.clear()
+        # Add operations to thread pool
+        self.threadPool.start(RunSchemeWorker(runSchemeOpSimple))
+        self.threadPool.start(RunSchemeWorker(runSchemeOpAllTests))
 
-        self.processingQueue = [runSchemeOpSimple, runSchemeOpAllTests]
+        # Store RunSchemeOperation objects
+        self.scheme_operations = [runSchemeOpSimple, runSchemeOpAllTests]
+
         info(f"{fn}: Starting operations")
 
         # Start spinners
@@ -212,9 +237,6 @@ class EditorWindowController(QMainWindow):
         self.startSpinner(self.bestGuessSpinner)
         for spinner in self.testSpinners:
             self.startSpinner(spinner)
-
-        for op in self.processingQueue:
-            op.start()
 
     def cleanup(self):
         if self.runCodeTimer.isActive():
@@ -280,17 +302,6 @@ class EditorWindowController(QMainWindow):
         for spinner in self.testSpinners:
             self.stopSpinner(spinner)
 
-    # --- Text Change Handlers ---
-    # Although the QTextEdit and QLineEdit signals are already connected to setupRunCodeFromEditPaneTimer,
-    # you can add these methods if you want to log the changes as done in Swift.
-    def textDidChange(self):
-        print("@@@@@@@@@@@@@@@@@@@ textDidChange")
-        self.setupRunCodeFromEditPaneTimer()
-
-    def controlTextDidChange(self):
-        print("@@@@@@@@@@@@@@@@@@@ controlTextDidChange")
-        self.setupRunCodeFromEditPaneTimer()
-
     def makeQuerySimpleForMondoSchemeFileString(self, interp_string: str) -> str:
 
         # Get the scheme definition text
@@ -321,59 +332,17 @@ class EditorWindowController(QMainWindow):
             testOutputs[i] = (
                 self.testExpectedOutputs[i].text() if processTest[i] else ""
             )
-        allTestInputs = (
-            testInputs[0]
-            + " "
-            + testInputs[1]
-            + " "
-            + testInputs[2]
-            + " "
-            + testInputs[3]
-            + " "
-            + testInputs[4]
-            + " "
-            + testInputs[5]
-            + " "
-        )
-        allTestOutputs = (
-            testOutputs[0]
-            + " "
-            + testOutputs[1]
-            + " "
-            + testOutputs[2]
-            + " "
-            + testOutputs[3]
-            + " "
-            + testOutputs[4]
-            + " "
-            + testOutputs[5]
-            + " "
-        )
+
+        allTestInputs = " ".join(testInputs)
+        allTestOutputs = " ".join(testOutputs)
 
         definitionText = self.schemeDefinitionView.toPlainText()
 
-        alltests_string_part_1 = ALLTESTS_STRING_PART_1
-        alltests_string_part_2 = ALLTESTS_STRING_PART_2
-
-        eval_flags_fast = "(allow-incomplete-search)"
-        eval_flags_complete = "(disallow-incomplete-search)"
-        eval_string_fast = f"(begin {eval_flags_fast} (results))"
-        eval_string_complete = f"(begin {eval_flags_complete} (results))"
-
-        allTestWriteString = (
-            f"(define (ans-allTests)\n"
-            f"  (define (results)\n"
-            f"{alltests_string_part_1}\n"
-            f"        (== `({definitionText}) defn-list)\n\n"
-            f"{alltests_string_part_2}\n"
-            f"(== `({definitionText}) defns) (appendo defns `(((lambda x x) {allTestInputs})) begin-body) (evalo `(begin . ,begin-body) (list {allTestOutputs})))\n"
-            f"(let ((results-fast {eval_string_fast}))\n"
-            f"  (if (null? results-fast)\n"
-            f"    {eval_string_complete}\n"
-            f"    results-fast)))"
+        full_string = ALL_TEST_WRITE_T.substitute(
+            definitionText=definitionText,
+            allTestInputs=allTestInputs,
+            allTestOutputs=allTestOutputs,
         )
-
-        full_string = f";; allTests\n{allTestWriteString}"
 
         print(f"Generated allTestWriteString:\n{rainbowp(full_string)}")
         return full_string
@@ -382,80 +351,33 @@ class EditorWindowController(QMainWindow):
         self, defns: str, body: str, expectedOut: str, simple: bool, name: str
     ) -> str:
         if simple:
-            parse_ans_string = (
-                f"(define (parse-ans{name}) (run 1 (q)\n"
-                f' (let ((g1 (gensym "g1")) (g2 (gensym "g2")) (g3 (gensym "g3")) '
-                f'(g4 (gensym "g4")) (g5 (gensym "g5")) (g6 (gensym "g6")) '
-                f'(g7 (gensym "g7")) (g8 (gensym "g8")) (g9 (gensym "g9")) '
-                f'(g10 (gensym "g10")) (g11 (gensym "g11")) (g12 (gensym "g12")) '
-                f'(g13 (gensym "g13")) (g14 (gensym "g14")) (g15 (gensym "g15")) '
-                f'(g16 (gensym "g16")) (g17 (gensym "g17")) (g18 (gensym "g18")) '
-                f'(g19 (gensym "g19")) (g20 (gensym "g20")))\n'
-                f" (fresh (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z _) (parseo `(begin {defns} {body}))))))"
+            parse_ans_string = SIMPLE_PARSE_ANS_T.substitute(
+                name=name, defns=defns, body=body
             )
         else:
-            parse_ans_string = (
-                f"(define (parse-ans{name}) (run 1 (q)\n"
-                f' (let ((g1 (gensym "g1")) (g2 (gensym "g2")) (g3 (gensym "g3")) '
-                f'(g4 (gensym "g4")) (g5 (gensym "g5")) (g6 (gensym "g6")) '
-                f'(g7 (gensym "g7")) (g8 (gensym "g8")) (g9 (gensym "g9")) '
-                f'(g10 (gensym "g10")) (g11 (gensym "g11")) (g12 (gensym "g12")) '
-                f'(g13 (gensym "g13")) (g14 (gensym "g14")) (g15 (gensym "g15")) '
-                f'(g16 (gensym "g16")) (g17 (gensym "g17")) (g18 (gensym "g18")) '
-                f'(g19 (gensym "g19")) (g20 (gensym "g20")))\n'
-                f" (fresh (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z _) "
-                f"(fresh (names dummy-expr) (extract-nameso `( {defns} ) names) (parseo `((lambda ,names {body}) ,dummy-expr)))))))"
-            )
+            parse_ans_string = PARSE_ANS_T.substitute(name=name, defns=defns, body=body)
+
         # Load the eval query string parts from constants
-        eval_string_part_1 = EVAL_STRING_PART_1
-        eval_string_part_2 = EVAL_STRING_PART_2
+        eval_string = EVAL_T.substitute(defns=defns, body=body, expectedOut=expectedOut)
 
-        print(f"{INFO}{eval_string_part_1=}")
-        print(f"{INFO}{eval_string_part_2=}")
-        eval_string = (
-            eval_string_part_1
-            + "\n"
-            + "        (== `( "
-            + defns
-            + " ) defn-list)\n"
-            + eval_string_part_2
-            + "\n"
-            + " (evalo `(begin "
-            + defns
-            + " "
-            + body
-            + " ) "
-            + expectedOut
-            + "))))"
+        eval_string_fast = EVAL_FAST_T.substitute(eval_string=eval_string)
+        eval_string_complete = EVAL_COMPLETE_T.substitute(eval_string=eval_string)
+        eval_string_both = EVAL_BOTH_T.substitute(
+            eval_string_fast=eval_string_fast, eval_string_complete=eval_string_complete
         )
 
-        eval_flags_fast = "(allow-incomplete-search)"
-        eval_flags_complete = "(disallow-incomplete-search)"
-
-        eval_string_fast = f"(begin {eval_flags_fast} {eval_string})"
-        eval_string_complete = f"(begin {eval_flags_complete} {eval_string})"
-        eval_string_both = (
-            f"(let ((results-fast {eval_string_fast}))\n"
-            f"  (if (null? results-fast)\n"
-            f"    {eval_string_complete}\n"
-            f"     results-fast))"
+        define_ans_string = DEFINE_ANS_T.substitute(
+            name=name, eval_string_both=eval_string_both
         )
 
-        define_ans_string = (
-            f"(define (query-val{name})\n"
-            "  (if (null? (parse-ans" + name + "))\n"
-            "      'parse-error\n"
-            "      " + eval_string_both + "))   "
+        query_type = SIMPLE_Q if simple else INDIVIDUAL_Q
+
+        full_string = FULL_T.substitute(
+            query_type=query_type,
+            parse_ans_string=parse_ans_string,
+            define_ans_string=define_ans_string,
         )
 
-        full_string = (
-            (";; simple query" if simple else ";; individual test query")
-            + "\n\n"
-            + (parse_ans_string)
-            + "\n\n"
-            + define_ans_string
-            + "\n\n"
-        )
         print(f"Generated query string:\n{rainbowp(full_string)}\n")
         return full_string
 

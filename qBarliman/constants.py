@@ -132,3 +132,13 @@ Scheme code constants
 
 LOAD_MK_VICARE = f'(load "{MK_VICARE}")'
 LOAD_MK = f'(load "{MK}")'
+
+
+SIMPLE_Q = "simple"
+INDIVIDUAL_Q = "individual test"
+
+EVAL_FLAGS_FAST = "(allow-incomplete-search)"
+EVAL_FLAGS_COMPLETE = "(disallow-incomplete-search)"
+
+EVAL_STRING_FAST = f"(begin {EVAL_FLAGS_FAST} (results))"
+EVAL_STRING_COMPLETE = f"(begin {EVAL_FLAGS_COMPLETE} (results))"
