@@ -89,7 +89,6 @@ class EditorWindowController(QMainWindow):
         self.bestGuessView.setReadOnly(True)
         self.bestGuessView.setFont(default_font)
         self.bestGuessView.setPlaceholderText("No best guess available.")
-        self.bestGuessSpinner = BusyIndicator(self)  # Updated to BusyIndicator
         self.errorOutputView = QTextEdit(self)  # New widget for error output
         self.errorOutputView.setReadOnly(True)
         self.errorOutputView.hide()  # Initially hidden
@@ -104,13 +103,12 @@ class EditorWindowController(QMainWindow):
         layout.addWidget(self.definitionAndBestGuessSplitView)
 
         # --- Progress Indicators (equivalent to NSProgressIndicator) ---
-        self.schemeDefinitionSpinner = BusyIndicator(self)  # Updated to BusyIndicator
-        self.bestGuessSpinner = BusyIndicator(self)  # Updated to BusyIndicator
+        self.schemeDefinitionSpinner = QTimer(self)  # Updated to QTimer
+        self.bestGuessSpinner = QTimer(self)  # Updated to QTimer
 
         # Add spinners to layout with proper alignment
         spinner_layout = QHBoxLayout()
         spinner_layout.addStretch()
-        spinner_layout.addWidget(self.schemeDefinitionSpinner)
         layout.addLayout(spinner_layout)
 
         # --- Status Labels ---
@@ -156,11 +154,10 @@ class EditorWindowController(QMainWindow):
             self.testStatusLabels.append(status_label)
             grid.addWidget(status_label, i, 3)
 
-            spinner = BusyIndicator(self)  # Updated to BusyIndicator
+            spinner = QTimer(self)  # Updated to QTimer
             self.testSpinners.append(spinner)
             # Add to grid layout in last column
-            grid.addWidget(spinner, i, 4, Qt.AlignmentFlag.AlignRight)
-            spinner.hide()  # Initially hidden
+            grid.addWidget(QWidget(), i, 4, Qt.AlignmentFlag.AlignRight)
         layout.addLayout(grid)
 
         # --- Default Test Examples ---
@@ -383,12 +380,12 @@ class EditorWindowController(QMainWindow):
         return full_string
 
     def startSpinner(self, spinner):
-        if isinstance(spinner, BusyIndicator):
-            spinner.startAnimation()
+        if isinstance(spinner, QTimer):
+            spinner.start(50)
 
     def stopSpinner(self, spinner):
-        if isinstance(spinner, BusyIndicator):
-            spinner.stopAnimation()
+        if isinstance(spinner, QTimer):
+            spinner.stop()
 
     def updateBestGuess(self, taskType: str, output: str):
         if taskType == "simple":
