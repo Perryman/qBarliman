@@ -1,7 +1,7 @@
 import os
 import traceback
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
     QTextEdit,
@@ -12,8 +12,8 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QHBoxLayout,
 )
-from PyQt6.QtGui import QFont, QTextCursor
-from PyQt6.QtCore import (
+from PySide6.QtGui import QFont, QTextCursor
+from PySide6.QtCore import (
     QTimer,
     Qt,
     QThread,
@@ -27,8 +27,6 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtCore import QUrl
 
 from qBarliman.operations.run_scheme_operation import RunSchemeOperation
-from PyQt6.QtGui import QFont
-from PyQt6.QtCore import QTimer, Qt
 from qBarliman.widgets.scheme_editor_text_view import SchemeEditorTextView
 from qBarliman.utils.constrained_splitter import ConstrainedSplitter
 from qBarliman.constants import *  # warn, good, info, logging fns from here
