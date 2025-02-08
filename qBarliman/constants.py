@@ -74,29 +74,21 @@ TEST_TIMEOUT_MS = 60000  # 60 seconds for testing
 PROCESS_TIMEOUT_MS = 120000  # 120 seconds for processes
 
 # Find Scheme executable
-SCHEME_EXECUTABLE = "/usr/bin/scheme"  # Default location
-if not os.path.exists(SCHEME_EXECUTABLE):
-    # Try common alternative names/locations
-    potential_paths = [
-        "/usr/bin/chez-scheme",
-        "/usr/local/bin/scheme",
-        "/usr/local/bin/chez-scheme",
-        "/opt/chez/bin/scheme",
-    ]
-    for path in potential_paths:
-        if os.path.exists(path):
-            SCHEME_EXECUTABLE = path
-            good(f"Found Scheme executable at: {path}")
-            break
-    else:
-        warn(f"Could not find Scheme executable in common locations")
-
-# Verify executable permissions
-if os.path.exists(SCHEME_EXECUTABLE):
-    if not os.access(SCHEME_EXECUTABLE, os.X_OK):
-        warn(f"Scheme executable found but not executable: {SCHEME_EXECUTABLE}")
-    else:
-        good(f"Verified Scheme executable permissions: {SCHEME_EXECUTABLE}")
+SCHEME_EXECUTABLE = None
+potential_executables = ["chez", "scheme"]
+for executable in potential_executables:
+    if any(
+        os.access(os.path.join(path, executable), os.X_OK)
+        for path in os.environ["PATH"].split(os.pathsep)
+    ):
+        SCHEME_EXECUTABLE = executable
+        good(f"Found Scheme executable: {executable}")
+        break
+else:
+    warn(
+        f"Could not find Scheme executable in PATH. Looked for: {', '.join(potential_executables)}"
+    )
+    exit(1)
 
 """
 Load query strings from files

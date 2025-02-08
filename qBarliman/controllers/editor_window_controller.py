@@ -131,21 +131,27 @@ class EditorWindowController(QMainWindow):
         self.testExpectedOutputs = []
         self.testStatusLabels = []
         self.testTimers = []
+
         grid = QGridLayout()
         for i in range(6):
+            # Test label
             grid.addWidget(QLabel(f"Test {i+1}:"), i, 0)
+
+            # Input field
             input_field = QLineEdit(self)
             input_field.setFont(default_font)
             input_field.textChanged.connect(self.setupRunCodeFromEditPaneTimer)
             self.testInputs.append(input_field)
             grid.addWidget(input_field, i, 1)
 
+            # Expected output field
             expected_output = QLineEdit(self)
             expected_output.setFont(default_font)
             expected_output.textChanged.connect(self.setupRunCodeFromEditPaneTimer)
             self.testExpectedOutputs.append(expected_output)
             grid.addWidget(expected_output, i, 2)
 
+            # Status label
             status_label = QLabel("", self)
             status_label.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse
@@ -154,31 +160,25 @@ class EditorWindowController(QMainWindow):
             self.testStatusLabels.append(status_label)
             grid.addWidget(status_label, i, 3)
 
+            # Timer setup
             timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.setInterval(TEST_TIMEOUT_MS)
+            timer.timeout.connect(self.handleTestTimeout)
             self.testTimers.append(timer)
-            # Replace the empty QWidget with a container widget that uses a right-aligned layout:
+
+            # Timer container (just an empty spacer)
             container = QWidget(self)
             container_layout = QHBoxLayout(container)
             container_layout.setContentsMargins(0, 0, 0, 0)
-            # container_layout.addStretch()  # Pushes any future widget to the right
-            timer_button = QPushButton("Timeout", self)
-            timer_button.setEnabled(False)
-            container_layout.addWidget(timer_button)
-            container_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
             grid.addWidget(container, i, 4)
+
         layout.addLayout(grid)
 
-        default_test_inputs = DEFAULT_TEST_INPUTS
-        default_test_expected = DEFAULT_TEST_EXPECTED_OUTPUTS
+        # Set default values after all widgets are created
         for i in range(6):
-            self.testInputs[i].setText(default_test_inputs[i])
-            self.testExpectedOutputs[i].setText(default_test_expected[i])
-
-        for timer in self.testTimers:
-            timer.setSingleShot(True)
-            timer.setInterval(TEST_TIMEOUT_MS)  # Set interval from constant
-            debug(f"setupUI: Configuring timer with {TEST_TIMEOUT_MS}ms timeout")
-            timer.timeout.connect(self.handleTestTimeout)
+            self.testInputs[i].setText(DEFAULT_TEST_INPUTS[i])
+            self.testExpectedOutputs[i].setText(DEFAULT_TEST_EXPECTED_OUTPUTS[i])
 
     def setupRunCodeFromEditPaneTimer(self):
         if self.initialization_complete:
@@ -369,7 +369,7 @@ class EditorWindowController(QMainWindow):
 
     def updateBestGuess(self, taskType: str, output: str):
         debug(
-            f"updateBestGuess: taskType={taskType}, output={output[:50]}..."
+            f"updateBestGuess: taskType={taskType}, output={output}..."
         )  # Truncate long output
         if taskType == "simple":
             self.bestGuessView.setPlainText(output)
@@ -407,7 +407,7 @@ class EditorWindowController(QMainWindow):
                 self.runCodeTimer.start(1000)
 
     def handleOperationFinished(self, taskType: str, output: str):
-        debug(f"handleOperationFinished: taskType={taskType}, output={output[:50]}...")
+        debug(f"handleOperationFinished: taskType={taskType}, output={output}...")
         if taskType == "simple":
             self.bestGuessView.setPlainText(output)
             self.stopTimer(self.bestGuessTimer)
@@ -470,9 +470,6 @@ class EditorWindowController(QMainWindow):
             self.testStatusLabels[i].setText("Timeout")
             self.testStatusLabels[i].setStyleSheet("color: red;")
 
-        # Temporarily skip cancellation for debugging
-        # debug("handleTestTimeout: calling cancel_all_operations")
-        # self.cancel_all_operations()
         self.errorOutputView.setPlainText("Test execution timed out.")
         self.errorOutputView.show()
 
