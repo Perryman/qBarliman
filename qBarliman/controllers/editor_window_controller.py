@@ -11,6 +11,9 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QSplitter,
     QHBoxLayout,
+    QSpacerItem,
+    QSizePolicy,
+    QPushButton,
 )
 from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtCore import (
@@ -54,14 +57,14 @@ class EditorWindowController(QMainWindow):
         self.runCodeTimer.setParent(self)
         self.runCodeTimer.setSingleShot(True)
         self.runCodeTimer.timeout.connect(self.executeRunCodeTimer)
-        self.interpreter_code = ""
+        self.interpreter_code = EVAL_STRING_PART_1 + EVAL_STRING_PART_2
         self.threadPool = QThreadPool()
-        self.loadInterpreterCode("interp")
         self.cleanup_timer = QTimer(self)
         self.cleanup_timer.timeout.connect(self.cleanup)
         self.initialization_complete = True
         self.scheme_operations = []
         self.processes = []
+        self.processingQueue = []
 
     def closeEvent(self, event):
         """Clean up threads before closing, but don't wait for them to finish."""
@@ -154,7 +157,11 @@ class EditorWindowController(QMainWindow):
             container = QWidget(self)
             container_layout = QHBoxLayout(container)
             container_layout.setContentsMargins(0, 0, 0, 0)
-            container_layout.addStretch()  # Pushes any future widget to the right
+            # container_layout.addStretch()  # Pushes any future widget to the right
+            timer_button = QPushButton("Timeout", self)
+            timer_button.setEnabled(False)
+            container_layout.addWidget(timer_button)
+            container_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
             grid.addWidget(container, i, 4)
         layout.addLayout(grid)
 
@@ -221,6 +228,9 @@ class EditorWindowController(QMainWindow):
 
         # Store RunSchemeOperation objects
         self.scheme_operations = [runSchemeOpSimple, runSchemeOpAllTests]
+        self.processingQueue.extend(
+            self.scheme_operations
+        )  # Add operations to processingQueue
 
         info(f"{fn}: Starting operations")
 
@@ -228,32 +238,6 @@ class EditorWindowController(QMainWindow):
         self.startTimer(self.bestGuessTimer)
         for timer in self.testTimers:
             self.startTimer(timer)
-
-    def cleanup(self):
-        if self.runCodeTimer.isActive():
-            self.runCodeTimer.stop()
-        for op in self.processingQueue:
-            if op.isRunning():
-                op.cancel()
-        self.processingQueue.clear()
-        info("Cleanup complete.")
-        # Stop all timers
-        self.stopTimer(self.schemeDefinitionTimer)
-        self.stopTimer(self.bestGuessTimer)
-        for timer in self.testTimers:
-            self.stopTimer(timer)
-
-    def loadInterpreterCode(self, interpFileName: str):
-        file_path = os.path.join(REL_INTERP_DIR, f"{interpFileName}.scm")
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                self.interpreter_code = f.read()
-            self.definitionStatusLabel.setText("Interpreter code loaded.")
-        except Exception as e:
-            error_message = f"Error loading interpreter code: {e}"
-            print(error_message)
-            self.definitionStatusLabel.setText(error_message)
-            self.interpreter_code = ""
 
     def cleanup(self):
         info("cleaning up!")
@@ -405,41 +389,6 @@ class EditorWindowController(QMainWindow):
                     self.runCodeTimer.stop()
                 self.runCodeTimer.start(1000)
 
-    def cleanup(self):
-        if self.runCodeTimer.isActive():
-            self.runCodeTimer.stop()
-        for op in self.processingQueue:
-            if op.isRunning():
-                op.cancel()
-        self.processingQueue.clear()
-        print("Cleanup complete.")
-        # Stop all timers
-        self.stopTimer(self.schemeDefinitionTimer)
-        self.stopTimer(self.bestGuessTimer)
-        for timer in self.testTimers:
-            self.stopTimer(timer)
-
-    def cancel_all_operations(self):
-        # Cancel and join all operations
-        for op in self.processingQueue:
-            try:
-                op.cancel()
-            except Exception:
-                pass
-        for op in self.processingQueue:
-            if hasattr(op, "wait"):
-                op.wait()
-        self.processingQueue.clear()
-        self.terminate_all_processes()
-
-    def terminate_all_processes(self):
-        for process in self.processes:
-            if process.state() == QProcess.ProcessState.Running:
-                process.terminate()
-                process.waitForFinished(3000)  # Wait for 3 seconds before force killing
-                if process.state() == QProcess.ProcessState.Running:
-                    process.kill()
-
     def handleOperationFinished(self, taskType: str, output: str):
         """Handle operation completion - runs on main thread"""
         if taskType == "simple":
@@ -486,7 +435,7 @@ class EditorWindowController(QMainWindow):
         for i, timer in enumerate(self.testTimers):
             if timer.isActive():
                 self.testStatusLabels[i].setText("Timeout")
-            self.testStatusLabels[i].setStyleSheet("color: red;")
+                self.testStatusLabels[i].setStyleSheet("color: red;")
 
         self.cancel_all_operations()
 
