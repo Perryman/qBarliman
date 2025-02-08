@@ -23,7 +23,8 @@ from PyQt6.QtCore import (
     pyqtSlot,
     QProcess,
 )
-from PyQt6.QtQuickControls2 import QQuickStyle, QQuickView, QQuickItem, BusyIndicator
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtCore import QUrl
 
 from qBarliman.operations.run_scheme_operation import RunSchemeOperation
 from PyQt6.QtGui import QFont
