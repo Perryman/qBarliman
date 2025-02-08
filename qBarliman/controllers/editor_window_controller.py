@@ -1,5 +1,6 @@
 import os
 import traceback
+import time  # Add time module
 
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -65,6 +66,8 @@ class EditorWindowController(QMainWindow):
         self.scheme_operations = []
         self.processes = []
         self.processingQueue = []
+        self.testTimeoutOccurred = False  # Prevent multiple handling of test timeouts
+        self.testTimerStartTimes = {}  # Dictionary to store timer start times
 
     def closeEvent(self, event):
         """Clean up threads before closing, but don't wait for them to finish."""
@@ -173,6 +176,8 @@ class EditorWindowController(QMainWindow):
 
         for timer in self.testTimers:
             timer.setSingleShot(True)
+            timer.setInterval(TEST_TIMEOUT_MS)  # Set interval from constant
+            debug(f"setupUI: Configuring timer with {TEST_TIMEOUT_MS}ms timeout")
             timer.timeout.connect(self.handleTestTimeout)
 
     def setupRunCodeFromEditPaneTimer(self):
@@ -184,6 +189,9 @@ class EditorWindowController(QMainWindow):
             self.runCodeTimer.start(1000)
 
     def runCodeFromEditPane(self):
+        debug("runCodeFromEditPane: entry - starting code execution")
+        # Reset timeout flag for new run
+        self.testTimeoutOccurred = False
         fn = "runCodeFromEditPane"
         info(self.__class__.__name__)
         info("Running code from edit pane...")
@@ -239,7 +247,9 @@ class EditorWindowController(QMainWindow):
         for timer in self.testTimers:
             self.startTimer(timer)
 
+    @Slot()
     def cleanup(self):
+        debug("cleanup: entry - starting cleanup process")
         info("cleaning up!")
         self.runCodeTimer.stop()
 
@@ -308,7 +318,7 @@ class EditorWindowController(QMainWindow):
             allTestOutputs=allTestOutputs,
         )
 
-        print(f"Generated allTestWriteString:\n{rainbowp(full_string)}")
+        # print(f"Generated allTestWriteString:\n{rainbowp(full_string)}")
         return full_string
 
     def makeQueryString(
@@ -342,18 +352,25 @@ class EditorWindowController(QMainWindow):
             define_ans_string=define_ans_string,
         )
 
-        print(f"Generated query string:\n{rainbowp(full_string)}\n")
+        # print(f"Generated query string:\n{rainbowp(full_string)}\n")
         return full_string
 
     def startTimer(self, timer):
+        debug(f"startTimer: starting timer {timer}")
+        self.testTimerStartTimes[timer] = time.time()
+        debug(f"startTimer: - Start Time: {self.testTimerStartTimes[timer]:.3f}")
         if isinstance(timer, QTimer):
-            timer.start(50)
+            debug(f"startTimer: - Using interval {timer.interval()}ms")
+            timer.start(timer.interval())  # Use configured interval
 
     def stopTimer(self, timer):
         if isinstance(timer, QTimer):
             timer.stop()
 
     def updateBestGuess(self, taskType: str, output: str):
+        debug(
+            f"updateBestGuess: taskType={taskType}, output={output[:50]}..."
+        )  # Truncate long output
         if taskType == "simple":
             self.bestGuessView.setPlainText(output)
             self.stopTimer(self.bestGuessTimer)
@@ -365,7 +382,7 @@ class EditorWindowController(QMainWindow):
                 results = [
                     line.split(":", 1)[1].strip() for line in lines if ":" in line
                 ]
-                print(f"Extracted results: {results}")
+                debug(f"updateAllTestsResults: Extracted results: {results}")
 
                 for i in range(min(6, len(results))):
                     self.testStatusLabels[i].setText(results[i])
@@ -390,20 +407,21 @@ class EditorWindowController(QMainWindow):
                 self.runCodeTimer.start(1000)
 
     def handleOperationFinished(self, taskType: str, output: str):
-        """Handle operation completion - runs on main thread"""
+        debug(f"handleOperationFinished: taskType={taskType}, output={output[:50]}...")
         if taskType == "simple":
             self.bestGuessView.setPlainText(output)
             self.stopTimer(self.bestGuessTimer)
         elif taskType == "allTests":
-            self.updateAllTestsResults(
-                taskType, output
-            )  # Changed from handleAllTestsResults to updateAllTestsResults
+            debug("handleOperationFinished: Calling updateAllTestsResults")
+            self.updateAllTestsResults(taskType, output)
         elif taskType == "error":  # Handle errors
             self.errorOutputView.setPlainText(output)
             self.errorOutputView.show()  # Show error output view when errors occur
 
     def handleStatusUpdate(self, taskType: str, status: str, color: str):
-        """Handle status updates - runs on main thread"""
+        debug(
+            f"handleStatusUpdate: taskType={taskType}, status={status}, color={color}"
+        )
         if taskType == "simple":
             self.definitionStatusLabel.setText(status)
             self.definitionStatusLabel.setStyleSheet(f"color: {color};")
@@ -412,7 +430,7 @@ class EditorWindowController(QMainWindow):
             self.bestGuessStatusLabel.setStyleSheet(f"color: {color};")
 
     def handleTimerUpdate(self, taskType: str, isRunning: bool):
-        """Handle timer state changes - runs on main thread"""
+        debug(f"handleTimerUpdate: taskType={taskType}, isRunning={isRunning}")
         if taskType == "simple":
             if isRunning:
                 self.startTimer(self.schemeDefinitionTimer)
@@ -425,19 +443,44 @@ class EditorWindowController(QMainWindow):
                 self.stopTimer(self.bestGuessTimer)
 
     def executeRunCodeTimer(self):
-        """Run code from the edit pane after a delay."""
+        debug("executeRunCodeTimer: entry - timer expired, running runCodeFromEditPane")
         self.runCodeTimer.stop()
         self.runCodeFromEditPane()
 
     def handleTestTimeout(self):
-        """Handle timeout for test execution."""
-        print("Test timed out!")
+        if self.testTimeoutOccurred:
+            debug("handleTestTimeout: already handled, returning")
+            return
+
+        self.testTimeoutOccurred = True
+        timeout_time = time.time()
+        debug("handleTestTimeout: entry")
+        debug(f"handleTestTimeout: - Timeout Time: {timeout_time:.3f}")
+
+        # Log timing info for each timer
         for i, timer in enumerate(self.testTimers):
             if timer.isActive():
-                self.testStatusLabels[i].setText("Timeout")
-                self.testStatusLabels[i].setStyleSheet("color: red;")
+                start_time = self.testTimerStartTimes.get(timer, 0)
+                elapsed_time = timeout_time - start_time
+                debug(f"handleTestTimeout: Timer {i} elapsed={elapsed_time:.3f}s")
+                self.stopTimer(timer)
 
-        self.cancel_all_operations()
+        # Update UI with timeout status
+        for i in range(len(self.testStatusLabels)):
+            self.testStatusLabels[i].setText("Timeout")
+            self.testStatusLabels[i].setStyleSheet("color: red;")
 
+        # Temporarily skip cancellation for debugging
+        # debug("handleTestTimeout: calling cancel_all_operations")
+        # self.cancel_all_operations()
         self.errorOutputView.setPlainText("Test execution timed out.")
         self.errorOutputView.show()
+
+    @Slot()
+    def cancel_all_operations(self):
+        debug("cancel_all_operations: entry - starting cancellation")
+        info("Cancelling all operations due to timeout.")
+        for op in self.processingQueue:
+            if hasattr(op, "cancel"):
+                debug(f"cancel_all_operations: canceling operation {op}")
+                op.cancel()

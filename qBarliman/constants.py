@@ -3,10 +3,11 @@ import os
 """
 Temporary flags
 """
-VERBOSE = 2  # Temporary good functions because I don't want accidental import bloat
+VERBOSE = 3  # Temporary good functions because I don't want accidental import bloat
 WARN = "❌‼️‼️"  # 0
 GOOD = "✅"  # 1
 INFO = "✏️"  # 2
+DEBUG = "🐞"  # 3
 
 
 def warn(*args):
@@ -22,6 +23,11 @@ def good(*args):
 def info(*args):
     if VERBOSE >= 2:
         print(INFO, *args)
+
+
+def debug(*args):  # Add debug level logging
+    if VERBOSE >= 3:
+        print(DEBUG, *args)
 
 
 """
@@ -59,6 +65,38 @@ INTERP_ALLTESTS_P_1 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_F_1)
 INTERP_ALLTESTS_P_2 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_F_2)
 INTERP_EVAL_P_1 = os.path.join(TEMPLATES_DIR, EVAL_QS_F_1)
 INTERP_EVAL_P_2 = os.path.join(TEMPLATES_DIR, EVAL_QS_F_2)
+
+"""
+System paths and configuration
+"""
+# Process timeouts in milliseconds - increase for debugging
+TEST_TIMEOUT_MS = 60000  # 60 seconds for testing
+PROCESS_TIMEOUT_MS = 120000  # 120 seconds for processes
+
+# Find Scheme executable
+SCHEME_EXECUTABLE = "/usr/bin/scheme"  # Default location
+if not os.path.exists(SCHEME_EXECUTABLE):
+    # Try common alternative names/locations
+    potential_paths = [
+        "/usr/bin/chez-scheme",
+        "/usr/local/bin/scheme",
+        "/usr/local/bin/chez-scheme",
+        "/opt/chez/bin/scheme",
+    ]
+    for path in potential_paths:
+        if os.path.exists(path):
+            SCHEME_EXECUTABLE = path
+            good(f"Found Scheme executable at: {path}")
+            break
+    else:
+        warn(f"Could not find Scheme executable in common locations")
+
+# Verify executable permissions
+if os.path.exists(SCHEME_EXECUTABLE):
+    if not os.access(SCHEME_EXECUTABLE, os.X_OK):
+        warn(f"Scheme executable found but not executable: {SCHEME_EXECUTABLE}")
+    else:
+        good(f"Verified Scheme executable permissions: {SCHEME_EXECUTABLE}")
 
 """
 Load query strings from files
