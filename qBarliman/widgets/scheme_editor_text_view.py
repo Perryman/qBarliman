@@ -1,23 +1,24 @@
-from PyQt6.QtWidgets import QTextEdit
-from PyQt6.QtGui import QKeyEvent, QTextCursor, QUndoStack, QTextCharFormat
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QTextEdit
+from PySide6.QtGui import QKeyEvent, QTextCursor, QTextCharFormat, QUndoStack
+from PySide6.QtCore import Qt
+
 
 class SchemeEditorTextView(QTextEdit):
     # List of logic variables to cycle through
     logic_vars = [f",{chr(c)}" for c in range(65, 91)]  # ,A ... ,Z
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-        # Disable rich text to simulate "smart quotes" being off
+        super().__init__(parent=parent)
+
         self.setAcceptRichText(False)
-        
+
         # Set up undo stack
         self.undo_stack = QUndoStack(self)
-        
+
         # Configure editor settings
         self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         self.setTabStopDistance(20)  # Equivalent to 4 spaces
-        
+
         # Set up standard format
         format = QTextCharFormat()
         format.setFontFamily("Monaco")
@@ -26,7 +27,10 @@ class SchemeEditorTextView(QTextEdit):
 
     def keyPressEvent(self, event: QKeyEvent):
         # Detect Control+Space
-        if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Space:
+        if (
+            event.modifiers() == Qt.KeyboardModifier.ControlModifier
+            and event.key() == Qt.Key.Key_Space
+        ):
             var_to_insert = self.findNextUnusedLogicVar()
             if var_to_insert:
                 cursor = self.textCursor()

@@ -17,10 +17,10 @@ from PySide6.QtCore import (
     QTimer,
     Qt,
     QThread,
-    pyqtSignal,
+    Signal,
     QThreadPool,
     QRunnable,
-    pyqtSlot,
+    Slot,
     QProcess,
 )
 from PySide6.QtQml import QQmlApplicationEngine
@@ -39,7 +39,7 @@ class RunSchemeWorker(QRunnable):
         super().__init__()
         self.operation = operation
 
-    @pyqtSlot()
+    @Slot()
     def run(self):
         self.operation.start()
 
@@ -47,21 +47,21 @@ class RunSchemeWorker(QRunnable):
 class EditorWindowController(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.initialization_complete = False  # Add a flag
+        self.initialization_complete = False
         self.setWindowTitle("qBarliman")
         self.setupUI()
-        self.runCodeTimer = QTimer()  # Corrected initialization
-        self.runCodeTimer.setParent(self)  # Corrected parent setting
+        self.runCodeTimer = QTimer()
+        self.runCodeTimer.setParent(self)
         self.runCodeTimer.setSingleShot(True)
         self.runCodeTimer.timeout.connect(self.executeRunCodeTimer)
         self.interpreter_code = ""
-        self.threadPool = QThreadPool()  # Initialize QThreadPool
+        self.threadPool = QThreadPool()
         self.loadInterpreterCode("interp")
         self.cleanup_timer = QTimer(self)
         self.cleanup_timer.timeout.connect(self.cleanup)
-        self.initialization_complete = True  # Set flag after initialization
-        self.scheme_operations = []  # Initialize scheme_operations list
-        self.processes = []  # Initialize processes list
+        self.initialization_complete = True
+        self.scheme_operations = []
+        self.processes = []
 
     def closeEvent(self, event):
         """Clean up threads before closing, but don't wait for them to finish."""
@@ -75,12 +75,10 @@ class EditorWindowController(QMainWindow):
         default_font = QFont("Monospace", 16)
         default_font.setStyleHint(QFont.StyleHint.Monospace)
 
-        # --- Text Views (equivalent to NSTextView) ---
-        self.schemeDefinitionView = SchemeEditorTextView(self)
+        self.schemeDefinitionView = SchemeEditorTextView(central)
         self.schemeDefinitionView.setPlaceholderText("Enter Scheme definitions...")
         self.schemeDefinitionView.setFont(default_font)
         self.schemeDefinitionView.setText("\n".join(DEFAULT_DEFINITIONS))
-        # Disable rich text to help prevent unicode quotes
         self.schemeDefinitionView.setAcceptRichText(False)
         self.schemeDefinitionView.textChanged.connect(
             self.setupRunCodeFromEditPaneTimer
@@ -89,11 +87,10 @@ class EditorWindowController(QMainWindow):
         self.bestGuessView.setReadOnly(True)
         self.bestGuessView.setFont(default_font)
         self.bestGuessView.setPlaceholderText("No best guess available.")
-        self.errorOutputView = QTextEdit(self)  # New widget for error output
+        self.errorOutputView = QTextEdit(self)
         self.errorOutputView.setReadOnly(True)
-        self.errorOutputView.hide()  # Initially hidden
+        self.errorOutputView.hide()
 
-        # --- Splitter (equivalent to NSSplitView) ---
         self.definitionAndBestGuessSplitView = ConstrainedSplitter(
             Qt.Orientation.Vertical, self, min_sizes=[100, 100], max_sizes=[500, 500]
         )
@@ -102,14 +99,12 @@ class EditorWindowController(QMainWindow):
         self.definitionAndBestGuessSplitView.addWidget(self.errorOutputView)
         layout.addWidget(self.definitionAndBestGuessSplitView)
 
-        # --- Progress Indicators (equivalent to NSProgressIndicator) ---
-        self.schemeDefinitionSpinner = QTimer(self)  # Updated to QTimer
-        self.bestGuessSpinner = QTimer(self)  # Updated to QTimer
+        self.schemeDefinitionTimer = QTimer(self)
+        self.bestGuessTimer = QTimer(self)
 
-        # Add spinners to layout with proper alignment
-        spinner_layout = QHBoxLayout()
-        spinner_layout.addStretch()
-        layout.addLayout(spinner_layout)
+        timer_layout = QHBoxLayout()
+        timer_layout.addStretch()
+        layout.addLayout(timer_layout)
 
         # --- Status Labels ---
         self.definitionStatusLabel = QLabel("", self)
@@ -126,11 +121,10 @@ class EditorWindowController(QMainWindow):
         )
         layout.addWidget(self.bestGuessStatusLabel)
 
-        # --- Test Fields (equivalent to NSTextField) ---
         self.testInputs = []
         self.testExpectedOutputs = []
         self.testStatusLabels = []
-        self.testSpinners = []
+        self.testTimers = []
         grid = QGridLayout()
         for i in range(6):
             grid.addWidget(QLabel(f"Test {i+1}:"), i, 0)
@@ -154,23 +148,25 @@ class EditorWindowController(QMainWindow):
             self.testStatusLabels.append(status_label)
             grid.addWidget(status_label, i, 3)
 
-            spinner = QTimer(self)  # Updated to QTimer
-            self.testSpinners.append(spinner)
-            # Add to grid layout in last column
-            grid.addWidget(QWidget(), i, 4, Qt.AlignmentFlag.AlignRight)
+            timer = QTimer(self)
+            self.testTimers.append(timer)
+            # Replace the empty QWidget with a container widget that uses a right-aligned layout:
+            container = QWidget(self)
+            container_layout = QHBoxLayout(container)
+            container_layout.setContentsMargins(0, 0, 0, 0)
+            container_layout.addStretch()  # Pushes any future widget to the right
+            grid.addWidget(container, i, 4)
         layout.addLayout(grid)
 
-        # --- Default Test Examples ---
         default_test_inputs = DEFAULT_TEST_INPUTS
         default_test_expected = DEFAULT_TEST_EXPECTED_OUTPUTS
         for i in range(6):
             self.testInputs[i].setText(default_test_inputs[i])
             self.testExpectedOutputs[i].setText(default_test_expected[i])
 
-        # # --- Tab Order Fix (Test 3 Expected -> Test 4 Input) ---
-        # QWidget.setTabOrder(self.testExpectedOutputs[2], self.testInputs[3])
-
-    # --- Timer and Code Execution Methods ---
+        for timer in self.testTimers:
+            timer.setSingleShot(True)
+            timer.timeout.connect(self.handleTestTimeout)
 
     def setupRunCodeFromEditPaneTimer(self):
         if self.initialization_complete:
@@ -188,7 +184,6 @@ class EditorWindowController(QMainWindow):
         info(f"{fn}: mk_vicare_path: {MK_VICARE}")
         info(f"{fn}: mk_path: {MK}")
 
-        definitionText = self.schemeDefinitionView.toPlainText()
         interp_string = self.interpreter_code
 
         query_simple = self.makeQuerySimpleForMondoSchemeFileString(interp_string)
@@ -203,7 +198,6 @@ class EditorWindowController(QMainWindow):
             f.write(query_alltests)
             info(f"{fn}: Written {BARLIMAN_QUERY_ALLTESTS_SCM}")
 
-        # Create RunSchemeOperations
         runSchemeOpSimple = RunSchemeOperation(
             self, os.path.join(TMP_DIR, BARLIMAN_QUERY_SIMPLE_SCM), "simple"
         )
@@ -215,11 +209,11 @@ class EditorWindowController(QMainWindow):
         # Connect signals
         runSchemeOpSimple.finishedSignal.connect(self.handleOperationFinished)
         runSchemeOpSimple.statusUpdateSignal.connect(self.handleStatusUpdate)
-        runSchemeOpSimple.spinnerUpdateSignal.connect(self.handleSpinnerUpdate)
+        runSchemeOpSimple.timerUpdateSignal.connect(self.handleTimerUpdate)
 
         runSchemeOpAllTests.finishedSignal.connect(self.handleOperationFinished)
         runSchemeOpAllTests.statusUpdateSignal.connect(self.handleStatusUpdate)
-        runSchemeOpAllTests.spinnerUpdateSignal.connect(self.handleSpinnerUpdate)
+        runSchemeOpAllTests.timerUpdateSignal.connect(self.handleTimerUpdate)
 
         # Add operations to thread pool
         self.threadPool.start(RunSchemeWorker(runSchemeOpSimple))
@@ -230,11 +224,10 @@ class EditorWindowController(QMainWindow):
 
         info(f"{fn}: Starting operations")
 
-        # Start spinners
-        self.startSpinner(self.schemeDefinitionSpinner)
-        self.startSpinner(self.bestGuessSpinner)
-        for spinner in self.testSpinners:
-            self.startSpinner(spinner)
+        self.startTimer(self.schemeDefinitionTimer)
+        self.startTimer(self.bestGuessTimer)
+        for timer in self.testTimers:
+            self.startTimer(timer)
 
     def cleanup(self):
         if self.runCodeTimer.isActive():
@@ -244,11 +237,11 @@ class EditorWindowController(QMainWindow):
                 op.cancel()
         self.processingQueue.clear()
         info("Cleanup complete.")
-        # Stop all spinners
-        self.stopSpinner(self.schemeDefinitionSpinner)
-        self.stopSpinner(self.bestGuessSpinner)
-        for spinner in self.testSpinners:
-            self.stopSpinner(spinner)
+        # Stop all timers
+        self.stopTimer(self.schemeDefinitionTimer)
+        self.stopTimer(self.bestGuessTimer)
+        for timer in self.testTimers:
+            self.stopTimer(timer)
 
     def loadInterpreterCode(self, interpFileName: str):
         file_path = os.path.join(REL_INTERP_DIR, f"{interpFileName}.scm")
@@ -262,25 +255,14 @@ class EditorWindowController(QMainWindow):
             self.definitionStatusLabel.setText(error_message)
             self.interpreter_code = ""
 
-    def getInterpreterCode(self) -> str:
-        # Ported from Swift's getInterpreterCode()
-        return self.interpreter_code
-
-    # --- Cleanup ---
     def cleanup(self):
         info("cleaning up!")
-        # Stop the timer used for delayed code execution
         self.runCodeTimer.stop()
 
-        # Cancel all operations in the processing queue.
-        # Assuming each op in self.processingQueue is a QThread or has a cancel() method.
         for op in self.processingQueue:
-            try:
-                op.cancel()  # if defined in RunSchemeOperation
-            except AttributeError:
-                pass
+            if hasattr(op, "cancel"):
+                op.cancel()
 
-        # Wait for any operations that support waiting (e.g., QThread)
         for op in self.processingQueue:
             if hasattr(op, "wait"):
                 op.wait()
@@ -294,11 +276,11 @@ class EditorWindowController(QMainWindow):
                     op.process.kill()
                 except AttributeError:
                     warn(f"$$$$  Could not kill process for {op}")
-        # Stop all spinners
-        self.stopSpinner(self.schemeDefinitionSpinner)
-        self.stopSpinner(self.bestGuessSpinner)
-        for spinner in self.testSpinners:
-            self.stopSpinner(spinner)
+        # Stop all timers
+        self.stopTimer(self.schemeDefinitionTimer)
+        self.stopTimer(self.bestGuessTimer)
+        for timer in self.testTimers:
+            self.stopTimer(timer)
 
     def makeQuerySimpleForMondoSchemeFileString(self, interp_string: str) -> str:
 
@@ -379,18 +361,18 @@ class EditorWindowController(QMainWindow):
         print(f"Generated query string:\n{rainbowp(full_string)}\n")
         return full_string
 
-    def startSpinner(self, spinner):
-        if isinstance(spinner, QTimer):
-            spinner.start(50)
+    def startTimer(self, timer):
+        if isinstance(timer, QTimer):
+            timer.start(50)
 
-    def stopSpinner(self, spinner):
-        if isinstance(spinner, QTimer):
-            spinner.stop()
+    def stopTimer(self, timer):
+        if isinstance(timer, QTimer):
+            timer.stop()
 
     def updateBestGuess(self, taskType: str, output: str):
         if taskType == "simple":
             self.bestGuessView.setPlainText(output)
-            self.stopSpinner(self.bestGuessSpinner)
+            self.stopTimer(self.bestGuessTimer)
 
     def updateAllTestsResults(self, taskType: str, output: str):
         if taskType == "allTests":
@@ -409,16 +391,16 @@ class EditorWindowController(QMainWindow):
                         self.errorOutputView.show()
                     else:
                         self.testStatusLabels[i].setStyleSheet("color: green;")
-                    self.stopSpinner(self.testSpinners[i])
+                    self.stopTimer(self.testTimers[i])
             except Exception as e:
                 print(f"Error processing all tests results: {e}")
                 traceback.print_exc()
                 self.errorOutputView.setPlainText(f"Error processing results: {e}")
                 self.errorOutputView.show()
             finally:
-                for spinner in self.testSpinners:
-                    self.stopSpinner(spinner)
-                self.stopSpinner(self.schemeDefinitionSpinner)
+                for timer in self.testTimers:
+                    self.stopTimer(timer)
+                self.stopTimer(self.schemeDefinitionTimer)
                 if self.runCodeTimer.isActive():
                     self.runCodeTimer.stop()
                 self.runCodeTimer.start(1000)
@@ -431,11 +413,11 @@ class EditorWindowController(QMainWindow):
                 op.cancel()
         self.processingQueue.clear()
         print("Cleanup complete.")
-        # Stop all spinners
-        self.stopSpinner(self.schemeDefinitionSpinner)
-        self.stopSpinner(self.bestGuessSpinner)
-        for spinner in self.testSpinners:
-            self.stopSpinner(spinner)
+        # Stop all timers
+        self.stopTimer(self.schemeDefinitionTimer)
+        self.stopTimer(self.bestGuessTimer)
+        for timer in self.testTimers:
+            self.stopTimer(timer)
 
     def cancel_all_operations(self):
         # Cancel and join all operations
@@ -462,7 +444,7 @@ class EditorWindowController(QMainWindow):
         """Handle operation completion - runs on main thread"""
         if taskType == "simple":
             self.bestGuessView.setPlainText(output)
-            self.stopSpinner(self.bestGuessSpinner)
+            self.stopTimer(self.bestGuessTimer)
         elif taskType == "allTests":
             self.updateAllTestsResults(
                 taskType, output
@@ -480,20 +462,33 @@ class EditorWindowController(QMainWindow):
             self.bestGuessStatusLabel.setText(status)
             self.bestGuessStatusLabel.setStyleSheet(f"color: {color};")
 
-    def handleSpinnerUpdate(self, taskType: str, isSpinning: bool):
-        """Handle spinner state changes - runs on main thread"""
+    def handleTimerUpdate(self, taskType: str, isRunning: bool):
+        """Handle timer state changes - runs on main thread"""
         if taskType == "simple":
-            if isSpinning:
-                self.startSpinner(self.schemeDefinitionSpinner)
+            if isRunning:
+                self.startTimer(self.schemeDefinitionTimer)
             else:
-                self.stopSpinner(self.schemeDefinitionSpinner)
+                self.stopTimer(self.schemeDefinitionTimer)
         elif taskType == "allTests":
-            if isSpinning:
-                self.startSpinner(self.bestGuessSpinner)
+            if isRunning:
+                self.startTimer(self.bestGuessTimer)
             else:
-                self.stopSpinner(self.bestGuessSpinner)
+                self.stopTimer(self.bestGuessTimer)
 
     def executeRunCodeTimer(self):
         """Run code from the edit pane after a delay."""
         self.runCodeTimer.stop()
         self.runCodeFromEditPane()
+
+    def handleTestTimeout(self):
+        """Handle timeout for test execution."""
+        print("Test timed out!")
+        for i, timer in enumerate(self.testTimers):
+            if timer.isActive():
+                self.testStatusLabels[i].setText("Timeout")
+            self.testStatusLabels[i].setStyleSheet("color: red;")
+
+        self.cancel_all_operations()
+
+        self.errorOutputView.setPlainText("Test execution timed out.")
+        self.errorOutputView.show()

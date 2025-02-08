@@ -1,7 +1,7 @@
-from PyQt6.QtWidgets import QSplitter
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QSplitter
+from PySide6.QtCore import Qt
 
-class ConstrainedSplitter(QSplitter):  # <--- Verify this line
+class ConstrainedSplitter(QSplitter):
     def __init__(self, orientation=Qt.Orientation.Horizontal, parent=None, min_sizes=None, max_sizes=None):
         super().__init__(orientation, parent)
         self.min_sizes = min_sizes or []

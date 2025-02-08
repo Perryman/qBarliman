@@ -1,12 +1,12 @@
 import time
-from PyQt6.QtCore import QThread, pyqtSignal, QProcess
+from PySide6.QtCore import QThread, Signal, QProcess
 
 
 class RunSchemeOperation(QThread):
     # Define signals for different types of updates
-    finishedSignal = pyqtSignal(str, str)  # (taskType, output)
-    statusUpdateSignal = pyqtSignal(str, str, str)  # (taskType, status, color)
-    spinnerUpdateSignal = pyqtSignal(str, bool)  # (taskType, isSpinning)
+    finishedSignal = Signal(str, str)  # (taskType, output)
+    statusUpdateSignal = Signal(str, str, str)  # (taskType, status, color)
+    timerUpdateSignal = Signal(str, float)  # (taskType, elapsedTime)
 
     def __init__(self, editor_window_controller, schemeScriptPathString, taskType):
         super().__init__()
@@ -33,7 +33,6 @@ class RunSchemeOperation(QThread):
             return
 
         self.start_time = time.monotonic()
-        self.spinnerUpdateSignal.emit(self.taskType, True)
         self.statusUpdateSignal.emit(self.taskType, self.THINKING, self.THINKING_COLOR)
 
         try:
@@ -47,7 +46,6 @@ class RunSchemeOperation(QThread):
 
         except Exception as e:
             self.finishedSignal.emit(self.taskType, f"Error: {e}")
-            self.spinnerUpdateSignal.emit(self.taskType, False)
 
     def cancel(self):
         self._isCanceled = True
@@ -61,8 +59,9 @@ class RunSchemeOperation(QThread):
         if err:
             output += f"\nErrors: {err}"
 
+        elapsed_time = time.monotonic() - self.start_time
         self.finishedSignal.emit(self.taskType, output)
-        self.spinnerUpdateSignal.emit(self.taskType, False)
+        self.timerUpdateSignal.emit(self.taskType, elapsed_time)
 
     def readStandardOutput(self):
         output = self.process.readAllStandardOutput().data().decode()
@@ -74,4 +73,5 @@ class RunSchemeOperation(QThread):
 
     def handleProcessError(self, error):
         self.finishedSignal.emit(self.taskType, f"Process error: {error}")
-        self.spinnerUpdateSignal.emit(self.taskType, False)
+        elapsed_time = time.monotonic() - self.start_time
+        self.timerUpdateSignal.emit(self.taskType, elapsed_time)
