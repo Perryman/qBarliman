@@ -5,10 +5,21 @@ import time
 import traceback
 from dataclasses import dataclass
 from typing import Optional, Any, cast, Protocol, List
-from PySide6.QtCore import QObject, QRunnable, Signal, QProcess, Slot, Qt, QTimer, QMetaObject
+from PySide6.QtCore import (
+    QObject,
+    QRunnable,
+    Signal,
+    QProcess,
+    Slot,
+    Qt,
+    QTimer,
+    QMetaObject,
+    Q_ARG,
+)
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QTextEdit, QLineEdit, QLabel
 from qBarliman.constants import *
+
 
 @dataclass
 class ProcessResult:
@@ -17,8 +28,10 @@ class ProcessResult:
     exit_code: int
     crashed: bool
 
+
 class EditorWindowInterface(Protocol):
     """Protocol defining required editor window interface"""
+
     def cancel_all_operations(self) -> None: ...
     def cleanup(self) -> None: ...
     def updateBestGuess(self, taskType: str, output: str) -> None: ...
@@ -32,6 +45,31 @@ class EditorWindowInterface(Protocol):
     def testExpectedOutputs(self) -> List[QLineEdit]: ...
     @property
     def testStatusLabels(self) -> List[QLabel]: ...
+
+
+class SchemeExecutionService(QObject):
+    """Service handling Scheme code execution and process management"""
+
+    processFinished = Signal(str, str)  # taskType, output
+    statusUpdate = Signal(str, str, str)  # taskType, status, color
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.colors = {
+            "default": QColor(Qt.GlobalColor.black),
+            "syntax_error": QColor(Qt.GlobalColor.darkYellow),
+            "parse_error": QColor(Qt.GlobalColor.yellow),
+            "failed": QColor(Qt.GlobalColor.red),
+            "success": QColor(Qt.GlobalColor.green),
+            "thinking": QColor(Qt.GlobalColor.magenta),
+        }
+
+    def execute_scheme(self, script_path: str, task_type: str) -> None:
+        operation = RunSchemeOperation(self, script_path, task_type)
+        operation.finishedSignal.connect(self.processFinished.emit)
+        operation.statusUpdateSignal.connect(self.statusUpdate.emit)
+        return operation
+
 
 class RunSchemeOperation(QObject, QRunnable):
     """Operation that executes a scheme process"""
@@ -47,7 +85,12 @@ class RunSchemeOperation(QObject, QRunnable):
     EVALUATION_FAILED_STRING = "Evaluation failed"
     THINKING_STRING = "???"
 
-    def __init__(self, editor_window_controller: EditorWindowInterface, schemeScriptPathString: str, taskType: str):
+    def __init__(
+        self,
+        editor_window_controller: EditorWindowInterface,
+        schemeScriptPathString: str,
+        taskType: str,
+    ):
         QObject.__init__(self)
         QRunnable.__init__(self)
         self.editor_window_controller = editor_window_controller
@@ -55,7 +98,7 @@ class RunSchemeOperation(QObject, QRunnable):
         self.taskType = taskType
         self.task: Optional[QProcess] = None
         self.start_time = time.monotonic()
-        
+
         # Initialize output buffers
         self._stdout_data = bytearray()
         self._stderr_data = bytearray()
@@ -65,11 +108,11 @@ class RunSchemeOperation(QObject, QRunnable):
 
         # Define colors once using Qt's color constants
         self.colors = {
-            'default': QColor(Qt.GlobalColor.black),
-            'syntax_error': QColor(Qt.GlobalColor.darkYellow),
-            'parse_error': QColor(Qt.GlobalColor.yellow),
-            'failed': QColor(Qt.GlobalColor.red),
-            'thinking': QColor(Qt.GlobalColor.magenta)
+            "default": QColor(Qt.GlobalColor.black),
+            "syntax_error": QColor(Qt.GlobalColor.darkYellow),
+            "parse_error": QColor(Qt.GlobalColor.yellow),
+            "failed": QColor(Qt.GlobalColor.red),
+            "thinking": QColor(Qt.GlobalColor.magenta),
         }
 
     def requestInterruption(self) -> None:
@@ -94,7 +137,7 @@ class RunSchemeOperation(QObject, QRunnable):
             self._stdout_data.clear()
             self._stderr_data.clear()
             self.start_time = time.monotonic()
-            
+
             self._update_thinking_state()
             self.timerUpdateSignal.emit(self.taskType, True)
 
@@ -110,7 +153,9 @@ class RunSchemeOperation(QObject, QRunnable):
 
     def _update_thinking_state(self) -> None:
         """Update UI elements to show thinking state"""
-        self.statusUpdateSignal.emit(self.taskType, self.THINKING_STRING, self.colors['thinking'].name())
+        self.statusUpdateSignal.emit(
+            self.taskType, self.THINKING_STRING, self.colors["thinking"].name()
+        )
 
     def _graceful_shutdown(self) -> None:
         """Perform graceful shutdown operations"""
@@ -131,25 +176,33 @@ class RunSchemeOperation(QObject, QRunnable):
         # Clean up any existing process first
         if self.task:
             self.cleanupProcess()
-            
+
         # Create process with proper parent
         self.task = QProcess(self)
-        
+
         # Set up process configuration
         self.task.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
         self.task.setInputChannelMode(QProcess.InputChannelMode.ManagedInputChannel)
         self.task.setWorkingDirectory(os.path.dirname(self.schemeScriptPathString))
-        
+
         # Set process environment if needed
         env = QProcess.systemEnvironment()
         self.task.setEnvironment(env)
-        
+
         # Connect signals using direct connections for better error handling
-        self.task.finished.connect(self.handleProcessFinished, Qt.ConnectionType.DirectConnection)
-        self.task.errorOccurred.connect(self.handle_process_error, Qt.ConnectionType.DirectConnection)
-        self.task.readyReadStandardOutput.connect(self._handle_stdout, Qt.ConnectionType.DirectConnection)
-        self.task.readyReadStandardError.connect(self._handle_stderr, Qt.ConnectionType.DirectConnection)
-        
+        self.task.finished.connect(
+            self.handleProcessFinished, Qt.ConnectionType.DirectConnection
+        )
+        self.task.errorOccurred.connect(
+            self.handle_process_error, Qt.ConnectionType.DirectConnection
+        )
+        self.task.readyReadStandardOutput.connect(
+            self._handle_stdout, Qt.ConnectionType.DirectConnection
+        )
+        self.task.readyReadStandardError.connect(
+            self._handle_stderr, Qt.ConnectionType.DirectConnection
+        )
+
         # Set process state
         self.task.setProcessState(QProcess.ProcessState.NotRunning)
 
@@ -158,49 +211,51 @@ class RunSchemeOperation(QObject, QRunnable):
         if not SCHEME_EXECUTABLE:
             warn("!!! SCHEME_EXECUTABLE not set")
             return False
-            
+
         scheme_path = shutil.which(SCHEME_EXECUTABLE)
         if not scheme_path:
             warn(f"!!! Could not find {SCHEME_EXECUTABLE} in PATH")
             return False
-            
+
         if not os.access(scheme_path, os.X_OK):
             warn(f"!!! {scheme_path} is not executable")
             return False
-            
-        good(f"Found Scheme executable at: {scheme_path}")  # Changed to good() for consistency
+
+        good(
+            f"Found Scheme executable at: {scheme_path}"
+        )  # Changed to good() for consistency
         return True
 
     def _launch_process(self) -> None:
         """Launch the scheme process with proper error recovery"""
         try:
             info("*** launching Scheme process")
-            
+
             # Verify scheme executable and get its full path
             if not self._verify_scheme_executable():
-                self._handle_process_error(QProcess.ProcessError.FailedToStart)
+                self.handle_process_error(QProcess.ProcessError.FailedToStart)
                 return
-                
+
             scheme_path = shutil.which(SCHEME_EXECUTABLE)
             if not scheme_path:  # Double check path
                 warn("Scheme path is None after verification")
-                self._handle_process_error(QProcess.ProcessError.FailedToStart)
+                self.handle_process_error(QProcess.ProcessError.FailedToStart)
                 return
-                
+
             debug(f"*** launchPath: {scheme_path}")
             debug(f"*** arguments: ['{self.schemeScriptPathString}']")
 
             # Verify script file exists
             if not os.path.exists(self.schemeScriptPathString):
                 warn(f"!!! Script file not found: {self.schemeScriptPathString}")
-                self._handle_process_error(QProcess.ProcessError.FailedToStart)
+                self.handle_process_error(QProcess.ProcessError.FailedToStart)
                 return
-                
+
             # Set up fresh process
             self._setup_process()
             if not self.task:
                 warn("!!! Failed to create QProcess")
-                self._handle_process_error(QProcess.ProcessError.FailedToStart)
+                self.handle_process_error(QProcess.ProcessError.FailedToStart)
                 return
 
             # Set up process recovery timer
@@ -208,19 +263,19 @@ class RunSchemeOperation(QObject, QRunnable):
             recovery_timer.setSingleShot(True)
             recovery_timer.timeout.connect(self._handle_process_stall)
             recovery_timer.start(5000)  # 5 second timeout
-            
+
             # Start process
             args = ["--script", self.schemeScriptPathString]
             debug(f"Starting process with args: {args}")
             self.task.start(scheme_path, args)
-            
+
             if not self.task.waitForStarted(3000):
                 warn("!!! Process failed to start within timeout")
-                self._handle_process_error(QProcess.ProcessError.FailedToStart)
+                self.handle_process_error(QProcess.ProcessError.FailedToStart)
                 return
-            
+
             recovery_timer.stop()
-            
+
             pid = self.task.processId()
             if pid:
                 good(f"*** launched process {pid}")
@@ -230,47 +285,195 @@ class RunSchemeOperation(QObject, QRunnable):
                 stall_timer.start(2000)  # Check every 2 seconds
             else:
                 warn("!!! Process started but no PID obtained")
-                
+
             if self.taskType == "simple" and not self.waitForSchemeProcess():
                 warn("!!! Process timed out")
-                self._handle_process_error(QProcess.ProcessError.Timedout)
+                self.handle_process_error(QProcess.ProcessError.Timedout)
 
         except Exception as e:
             warn(f"!!! Error launching process: {e}")
             debug(f"Traceback: {traceback.format_exc()}")
-            self._handle_process_error(QProcess.ProcessError.FailedToStart)
+            self.handle_process_error(QProcess.ProcessError.FailedToStart)
+
+    def _update_thinking_state(self) -> None:
+        """Update UI elements to show thinking state"""
+        self.statusUpdateSignal.emit(
+            self.taskType, self.THINKING_STRING, self.colors["thinking"].name()
+        )
+
+    def _graceful_shutdown(self) -> None:
+        """Perform graceful shutdown operations"""
+        try:
+            self.editor_window_controller.cancel_all_operations()
+            if self.task and self.task.state() != QProcess.ProcessState.NotRunning:
+                self.capture_remaining_output()
+                self._terminate_process()
+            self.cleanupProcess()
+        except Exception as e:
+            warn(f"Error during graceful shutdown: {e}")
+            debug(f"Traceback: {traceback.format_exc()}")
+        finally:
+            self.requestInterruption()
+
+    def _setup_process(self) -> None:
+        """Configure the QProcess for scheme execution"""
+        # Clean up any existing process first
+        if self.task:
+            self.cleanupProcess()
+
+        # Create process with proper parent
+        self.task = QProcess(self)
+
+        # Set up process configuration
+        self.task.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
+        self.task.setInputChannelMode(QProcess.InputChannelMode.ManagedInputChannel)
+        self.task.setWorkingDirectory(os.path.dirname(self.schemeScriptPathString))
+
+        # Set process environment if needed
+        env = QProcess.systemEnvironment()
+        self.task.setEnvironment(env)
+
+        # Connect signals using direct connections for better error handling
+        self.task.finished.connect(
+            self.handleProcessFinished, Qt.ConnectionType.DirectConnection
+        )
+        self.task.errorOccurred.connect(
+            self.handle_process_error, Qt.ConnectionType.DirectConnection
+        )
+        self.task.readyReadStandardOutput.connect(
+            self._handle_stdout, Qt.ConnectionType.DirectConnection
+        )
+        self.task.readyReadStandardError.connect(
+            self._handle_stderr, Qt.ConnectionType.DirectConnection
+        )
+
+        # Set process state
+        self.task.setProcessState(QProcess.ProcessState.NotRunning)
+
+    def _verify_scheme_executable(self) -> bool:
+        """Verify that the scheme executable exists and is accessible"""
+        if not SCHEME_EXECUTABLE:
+            warn("!!! SCHEME_EXECUTABLE not set")
+            return False
+
+        scheme_path = shutil.which(SCHEME_EXECUTABLE)
+        if not scheme_path:
+            warn(f"!!! Could not find {SCHEME_EXECUTABLE} in PATH")
+            return False
+
+        if not os.access(scheme_path, os.X_OK):
+            warn(f"!!! {scheme_path} is not executable")
+            return False
+
+        good(
+            f"Found Scheme executable at: {scheme_path}"
+        )  # Changed to good() for consistency
+        return True
+
+    def _launch_process(self) -> None:
+        """Launch the scheme process with proper error recovery"""
+        try:
+            info("*** launching Scheme process")
+
+            # Verify scheme executable and get its full path
+            if not self._verify_scheme_executable():
+                self.handle_process_error(QProcess.ProcessError.FailedToStart)
+                return
+
+            scheme_path = shutil.which(SCHEME_EXECUTABLE)
+            if not scheme_path:  # Double check path
+                warn("Scheme path is None after verification")
+                self.handle_process_error(QProcess.ProcessError.FailedToStart)
+                return
+
+            debug(f"*** launchPath: {scheme_path}")
+            debug(f"*** arguments: ['{self.schemeScriptPathString}']")
+
+            # Verify script file exists
+            if not os.path.exists(self.schemeScriptPathString):
+                warn(f"!!! Script file not found: {self.schemeScriptPathString}")
+                self.handle_process_error(QProcess.ProcessError.FailedToStart)
+                return
+
+            # Set up fresh process
+            self._setup_process()
+            if not self.task:
+                warn("!!! Failed to create QProcess")
+                self.handle_process_error(QProcess.ProcessError.FailedToStart)
+                return
+
+            # Set up process recovery timer
+            recovery_timer = QTimer(self)
+            recovery_timer.setSingleShot(True)
+            recovery_timer.timeout.connect(self._handle_process_stall)
+            recovery_timer.start(5000)  # 5 second timeout
+
+            # Start process
+            args = ["--script", self.schemeScriptPathString]
+            debug(f"Starting process with args: {args}")
+            self.task.start(scheme_path, args)
+
+            if not self.task.waitForStarted(3000):
+                warn("!!! Process failed to start within timeout")
+                self.handle_process_error(QProcess.ProcessError.FailedToStart)
+                return
+
+            recovery_timer.stop()
+
+            pid = self.task.processId()
+            if pid:
+                good(f"*** launched process {pid}")
+                # Set up stall detection
+                stall_timer = QTimer(self)
+                stall_timer.timeout.connect(self._check_process_responsive)
+                stall_timer.start(2000)  # Check every 2 seconds
+            else:
+                warn("!!! Process started but no PID obtained")
+
+            if self.taskType == "simple" and not self.waitForSchemeProcess():
+                warn("!!! Process timed out")
+                self.handle_process_error(QProcess.ProcessError.Timedout)
+
+        except Exception as e:
+            warn(f"!!! Error launching process: {e}")
+            debug(f"Traceback: {traceback.format_exc()}")
+            self.handle_process_error(QProcess.ProcessError.FailedToStart)
+
+    def _is_process_running(self) -> bool:
+        """Check if the process is running"""
+        return self.task and self.task.state() != QProcess.ProcessState.NotRunning
 
     @Slot()
     def _handle_process_stall(self):
         """Handle case where process appears to be stalled"""
         if not self.task:
             return
-            
+
         warn("Process appears to be stalled during startup")
-        self._handle_process_error(QProcess.ProcessError.Timedout)
+        self.handle_process_error(QProcess.ProcessError.Timedout)
 
     @Slot()
     def _check_process_responsive(self):
         """Check if process is still responsive"""
         if not self.task or not self._is_process_running():
             return
-            
+
         try:
             pid = self.task.processId()
             if pid:
                 # On Unix systems, sending signal 0 tests process existence
-                if os.name == 'posix':
+                if os.name == "posix":
                     try:
                         os.kill(pid, 0)
                     except ProcessLookupError:
                         warn(f"Process {pid} no longer exists")
-                        self._handle_process_error(QProcess.ProcessError.Crashed)
+                        self.handle_process_error(QProcess.ProcessError.Crashed)
                     except PermissionError:
                         warn(f"Process {pid} exists but we can't access it")
-                        self._handle_process_error(QProcess.ProcessError.UnknownError)
+                        self.handle_process_error(QProcess.ProcessError.UnknownError)
                 elif self.task.state() == QProcess.ProcessState.NotRunning:
                     warn(f"Process {pid} is not running")
-                    self._handle_process_error(QProcess.ProcessError.Crashed)
+                    self.handle_process_error(QProcess.ProcessError.Crashed)
         except Exception as e:
             warn(f"Error checking process responsiveness: {e}")
             debug(f"Traceback: {traceback.format_exc()}")
@@ -294,7 +497,7 @@ class RunSchemeOperation(QObject, QRunnable):
                     self,
                     "_append_stdout",
                     Qt.ConnectionType.QueuedConnection,
-                    Q_ARG(bytes, data)
+                    Q_ARG(bytes, data),
                 )
         except Exception as e:
             warn(f"Error handling stdout: {e}")
@@ -312,7 +515,7 @@ class RunSchemeOperation(QObject, QRunnable):
                     self,
                     "_append_stderr",
                     Qt.ConnectionType.QueuedConnection,
-                    Q_ARG(bytes, data)
+                    Q_ARG(bytes, data),
                 )
         except Exception as e:
             warn(f"Error handling stderr: {e}")
@@ -334,19 +537,19 @@ class RunSchemeOperation(QObject, QRunnable):
         """Handle process completion with Qt's event system"""
         if not self.task:
             return
-            
+
         try:
             # Capture process info before cleanup
             exit_code = self.task.exitCode()
             crash_signal = self.task.exitStatus() == QProcess.ExitStatus.CrashExit
-            
+
             # Use invokeMethod for thread-safe updates
             QMetaObject.invokeMethod(
                 self,
                 "_handle_completion",
                 Qt.ConnectionType.QueuedConnection,
                 Q_ARG(int, exit_code),
-                Q_ARG(bool, crash_signal)
+                Q_ARG(bool, crash_signal),
             )
 
         except Exception as e:
@@ -371,7 +574,7 @@ class RunSchemeOperation(QObject, QRunnable):
 
         if crash_signal:
             warn("Process crashed")
-            self._handle_process_error(QProcess.ProcessError.Crashed)
+            self.handle_process_error(QProcess.ProcessError.Crashed)
         elif exit_code == 0:
             self._handle_successful_completion(output)
         elif exit_code == 15:  # SIGTERM
@@ -392,21 +595,28 @@ class RunSchemeOperation(QObject, QRunnable):
     def _handle_simple_completion(self, output: str):
         """Handle completion of simple evaluation task"""
         if output == "parse-error-in-defn":
-            self._update_simple_ui(self.PARSE_ERROR_STRING, self.colors['parse_error'])
+            self._update_simple_ui(self.PARSE_ERROR_STRING, self.colors["parse_error"])
         elif output == "illegal-sexp-in-defn":
-            self._update_simple_ui(self.ILLEGAL_SEXPR_STRING, self.colors['syntax_error'])
+            self._update_simple_ui(
+                self.ILLEGAL_SEXPR_STRING, self.colors["syntax_error"]
+            )
         elif output == "()":
-            self._update_simple_ui(self.EVALUATION_FAILED_STRING, self.colors['failed'])
+            self._update_simple_ui(self.EVALUATION_FAILED_STRING, self.colors["failed"])
         else:
-            self._update_simple_ui("", self.colors['default'])
+            self._update_simple_ui("", self.colors["default"])
 
     def _update_simple_ui(self, status: str, color: QColor):
         """Update UI for simple task completion"""
         self.statusUpdateSignal.emit(self.taskType, status, color.name())
-        if hasattr(self.editor_window_controller, 'schemeDefinitionView'):
+        if hasattr(self.editor_window_controller, "schemeDefinitionView"):
             self.editor_window_controller.schemeDefinitionView.setStyleSheet(
-                f"color: {color.name()};")
-        if status in [self.ILLEGAL_SEXPR_STRING, self.PARSE_ERROR_STRING, self.EVALUATION_FAILED_STRING]:
+                f"color: {color.name()};"
+            )
+        if status in [
+            self.ILLEGAL_SEXPR_STRING,
+            self.PARSE_ERROR_STRING,
+            self.EVALUATION_FAILED_STRING,
+        ]:
             self.editor_window_controller.cancel_all_operations()
 
     def _handle_test_completion(self, output: str):
@@ -417,7 +627,10 @@ class RunSchemeOperation(QObject, QRunnable):
                 test_index = test_num - 1
                 elapsed_time = time.monotonic() - self.start_time
 
-                if output in ["illegal-sexp-in-test/answer", "parse-error-in-test/answer"]:
+                if output in [
+                    "illegal-sexp-in-test/answer",
+                    "parse-error-in-test/answer",
+                ]:
                     self._handle_test_syntax_error(test_index)
                 elif output in ["illegal-sexp-in-defn", "parse-error-in-defn"]:
                     self._handle_test_thinking(test_index)
@@ -431,38 +644,24 @@ class RunSchemeOperation(QObject, QRunnable):
     def _handle_test_syntax_error(self, test_index: int):
         """Handle syntax error in test"""
         self._update_test_ui(
-            test_index,
-            self.colors['syntax_error'],
-            self.ILLEGAL_SEXPR_STRING
+            test_index, self.colors["syntax_error"], self.ILLEGAL_SEXPR_STRING
         )
         self.editor_window_controller.cancel_all_operations()
 
     def _handle_test_thinking(self, test_index: int):
         """Handle thinking state in test"""
-        self._update_test_ui(
-            test_index,
-            self.colors['thinking'],
-            self.THINKING_STRING
-        )
+        self._update_test_ui(test_index, self.colors["thinking"], self.THINKING_STRING)
 
     def _handle_test_failure(self, test_index: int, elapsed_time: float):
         """Handle test failure"""
         status = f"Failed ({elapsed_time:.2f} s)"
-        self._update_test_ui(
-            test_index,
-            self.colors['failed'],
-            status
-        )
+        self._update_test_ui(test_index, self.colors["failed"], status)
         self.editor_window_controller.cancel_all_operations()
 
     def _handle_test_success(self, test_index: int, elapsed_time: float):
         """Handle test success"""
         status = f"Succeeded ({elapsed_time:.2f} s)"
-        self._update_test_ui(
-            test_index,
-            self.colors['default'],
-            status
-        )
+        self._update_test_ui(test_index, self.colors["default"], status)
 
     def _handle_alltest_completion(self, output: str):
         """Handle completion of allTests task"""
@@ -471,8 +670,12 @@ class RunSchemeOperation(QObject, QRunnable):
 
         if output == "fail":
             self._handle_best_guess_failure(elapsed_time)
-        elif output in ["illegal-sexp-in-defn", "parse-error-in-defn",
-                       "illegal-sexp-in-test/answer", "parse-error-in-test/answer"]:
+        elif output in [
+            "illegal-sexp-in-defn",
+            "parse-error-in-defn",
+            "illegal-sexp-in-test/answer",
+            "parse-error-in-test/answer",
+        ]:
             self._handle_best_guess_thinking()
         else:
             self._handle_best_guess_success(output, elapsed_time)
@@ -481,25 +684,31 @@ class RunSchemeOperation(QObject, QRunnable):
         """Handle best guess failure"""
         self.editor_window_controller.updateBestGuess(self.taskType, "")
         status = f"Failed ({elapsed_time:.2f} s)"
-        self.statusUpdateSignal.emit(self.taskType, status, self.colors['failed'].name())
+        self.statusUpdateSignal.emit(
+            self.taskType, status, self.colors["failed"].name()
+        )
         self.editor_window_controller.cancel_all_operations()
 
     def _handle_best_guess_thinking(self):
         """Handle best guess thinking state"""
         self.editor_window_controller.updateBestGuess(self.taskType, "")
-        self.statusUpdateSignal.emit(self.taskType, self.THINKING_STRING, self.colors['thinking'].name())
+        self.statusUpdateSignal.emit(
+            self.taskType, self.THINKING_STRING, self.colors["thinking"].name()
+        )
 
     def _handle_best_guess_success(self, guess: str, elapsed_time: float):
         """Handle best guess success"""
         self.editor_window_controller.updateBestGuess(self.taskType, guess)
         self._set_best_guess_font()
         status = f"Succeeded ({elapsed_time:.2f} s)"
-        self.statusUpdateSignal.emit(self.taskType, status, self.colors['default'].name())
+        self.statusUpdateSignal.emit(
+            self.taskType, status, self.colors["default"].name()
+        )
         self.editor_window_controller.cancel_all_operations()
 
     def _set_best_guess_font(self):
         """Set the font for best guess view"""
-        if hasattr(self.editor_window_controller, 'bestGuessView'):
+        if hasattr(self.editor_window_controller, "bestGuessView"):
             view = self.editor_window_controller.bestGuessView
             font = view.font()
             font.setFamily("Lucida Console")
@@ -509,26 +718,34 @@ class RunSchemeOperation(QObject, QRunnable):
     def _handle_termination(self):
         """Handle process termination"""
         debug(f"SIGTERM !!! taskType = {self.taskType}")
-        
+
         if self.taskType == "allTests":
             self.editor_window_controller.updateBestGuess(self.taskType, "")
-            self.statusUpdateSignal.emit(self.taskType, "", self.colors['default'].name())
+            self.statusUpdateSignal.emit(
+                self.taskType, "", self.colors["default"].name()
+            )
         elif self.taskType.startswith("test"):
             # Individual tests succeed when killed by allTests success
-            self._handle_test_success(int(self.taskType[4:]) - 1, time.monotonic() - self.start_time)
+            self._handle_test_success(
+                int(self.taskType[4:]) - 1, time.monotonic() - self.start_time
+            )
 
     def _handle_failed_completion(self):
         """Handle failed process completion"""
         if self.task:
             warn(f"exitStatus = {self.task.exitCode()}")
             if self.taskType == "simple":
-                self._update_simple_ui(self.ILLEGAL_SEXPR_STRING, self.colors['syntax_error'])
+                self._update_simple_ui(
+                    self.ILLEGAL_SEXPR_STRING, self.colors["syntax_error"]
+                )
             elif self.taskType.startswith("test"):
                 test_num = int(self.taskType[4:])
                 self._handle_test_syntax_error(test_num - 1)
             elif self.taskType == "allTests":
                 self.editor_window_controller.updateBestGuess(self.taskType, "")
-                self.statusUpdateSignal.emit(self.taskType, "", self.colors['default'].name())
+                self.statusUpdateSignal.emit(
+                    self.taskType, "", self.colors["default"].name()
+                )
 
     def cleanupProcess(self) -> None:
         """Clean up process resources using Qt's object hierarchy"""
@@ -536,12 +753,12 @@ class RunSchemeOperation(QObject, QRunnable):
             if self.task:
                 task = self.task
                 self.task = None
-                
+
                 if task.state() != QProcess.ProcessState.NotRunning:
                     debug("Cleaning up running process...")
                     self.capture_remaining_output()
                     self._terminate_process()
-                
+
                 task.close()
                 # Let Qt's parent-child relationship handle deletion
                 task.setParent(None)
@@ -557,24 +774,24 @@ class RunSchemeOperation(QObject, QRunnable):
         """Use Qt's built-in process management"""
         if not self.task:
             return
-            
+
         try:
             pid = self.task.processId()
             if not pid:
                 return
-                
+
             debug(f"Attempting to terminate process {pid}")
-            
+
             # Use Qt's built-in termination
             self.task.terminate()
             if not self.task.waitForFinished(1000):
                 warn(f"Process {pid} didn't terminate gracefully, forcing kill")
                 self.task.kill()
-                
+
                 # Let the event loop process the kill
                 if not QThread.msleep(100) or not self.task.waitForFinished(1000):
                     warn(f"Process {pid} didn't respond to kill")
-                    if os.name == 'posix':
+                    if os.name == "posix":
                         try:
                             os.kill(pid, signal.SIGKILL)
                             debug(f"Sent SIGKILL to process {pid}")
@@ -586,7 +803,7 @@ class RunSchemeOperation(QObject, QRunnable):
                     debug(f"Process {pid} killed successfully")
             else:
                 debug(f"Process {pid} terminated gracefully")
-                
+
         except Exception as e:
             warn(f"Error terminating process: {e}")
             debug(f"Traceback: {traceback.format_exc()}")
@@ -597,7 +814,7 @@ class RunSchemeOperation(QObject, QRunnable):
         """Capture any remaining stdout/stderr data"""
         if not self.task:
             return
-            
+
         try:
             if self.task.bytesAvailable():
                 self._stdout_data.extend(self.task.readAllStandardOutput().data())
@@ -613,7 +830,7 @@ class RunSchemeOperation(QObject, QRunnable):
         """Handle QProcess errors with strong typing"""
         if self._killed:
             return
-            
+
         try:
             error_messages = {
                 QProcess.ProcessError.FailedToStart: "Process failed to start. Check if Scheme is installed.",
@@ -621,24 +838,27 @@ class RunSchemeOperation(QObject, QRunnable):
                 QProcess.ProcessError.Timedout: "Process timed out.",
                 QProcess.ProcessError.WriteError: "Error writing to process.",
                 QProcess.ProcessError.ReadError: "Error reading from process.",
-                QProcess.ProcessError.UnknownError: "Unknown process error."
+                QProcess.ProcessError.UnknownError: "Unknown process error.",
             }
-            
+
             error_msg = error_messages.get(error, "Process error occurred")
             warn(f"!!! Process error: {error_msg}")
-            
+
             QMetaObject.invokeMethod(
                 self,
                 "_emit_error_signals",
                 Qt.ConnectionType.QueuedConnection,
-                Q_ARG(str, error_msg)
+                Q_ARG(str, error_msg),
             )
-            
-            if error not in [QProcess.ProcessError.WriteError, QProcess.ProcessError.ReadError]:
+
+            if error not in [
+                QProcess.ProcessError.WriteError,
+                QProcess.ProcessError.ReadError,
+            ]:
                 QMetaObject.invokeMethod(
                     self.editor_window_controller,
                     "cancel_all_operations",
-                    Qt.ConnectionType.QueuedConnection
+                    Qt.ConnectionType.QueuedConnection,
                 )
         except Exception as e:
             warn(f"Error handling process error: {e}")
@@ -648,14 +868,15 @@ class RunSchemeOperation(QObject, QRunnable):
     def _emit_error_signals(self, error_msg: str) -> None:
         """Thread-safe error signal emission"""
         if not self._killed:
-            self.statusUpdateSignal.emit(self.taskType, error_msg, self.colors['failed'].name())
+            self.statusUpdateSignal.emit(
+                self.taskType, error_msg, self.colors["failed"].name()
+            )
             self.timerUpdateSignal.emit(self.taskType, False)
 
-    def _store_process_result(self, output: str, error: str, exit_code: int, crashed: bool) -> None:
+    def _store_process_result(
+        self, output: str, error: str, exit_code: int, crashed: bool
+    ) -> None:
         """Thread-safe process result storage"""
         self._process_result = ProcessResult(
-            output=output,
-            error=error,
-            exit_code=exit_code,
-            crashed=crashed
+            output=output, error=error, exit_code=exit_code, crashed=crashed
         )

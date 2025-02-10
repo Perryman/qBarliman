@@ -1,4 +1,6 @@
 import os
+import sys
+import platform
 
 """
 Temporary flags
@@ -8,44 +10,48 @@ WARN = "❌‼️‼️"  # 0
 GOOD = "✅"  # 1
 INFO = "✏️"  # 2
 DEBUG = "🐞"  # 3
+# Avoid unnecessary coloring when redirecting to file
+USE_COLORS = sys.stdout.isatty()
 
 
 def warn(*args):
     if VERBOSE >= 0:
-        print(WARN, *args)
+        print(f"\033[33m{WARN}\033[0m" if USE_COLORS else WARN, *args)
 
 
 def good(*args):
     if VERBOSE >= 1:
-        print(GOOD, *args)
+        print(f"\033[32m{GOOD}\033[0m" if USE_COLORS else GOOD, *args)
 
 
 def info(*args):
     if VERBOSE >= 2:
-        print(INFO, *args)
+        print(f"\033[37m{INFO}\033[0m" if USE_COLORS else INFO, *args)
 
 
-def debug(*args):  # Add debug level logging
+def debug(*args):
     if VERBOSE >= 3:
-        print(DEBUG, *args)
+        print(f"\033[36m{DEBUG}\033[0m" if USE_COLORS else DEBUG, *args)
 
 
 """
 Query string (QS) file names
 """
 
-ALLTESTS_QS_F_1 = "interp-alltests-query-string-part-1.scm"
-ALLTESTS_QS_F_2 = "interp-alltests-query-string-part-2.scm"
-EVAL_QS_F_1 = "interp-eval-query-string-part-1.scm"
-EVAL_QS_F_2 = "interp-eval-query-string-part-2.scm"
-BARLIMAN_QUERY_SIMPLE_SCM = "barliman-query-simple.scm"
-BARLIMAN_QUERY_ALLTESTS_SCM = "barliman-query-alltests.scm"
+ALLTESTS_QS_FILE_1 = "interp-alltests-query-string-part-1.scm"
+ALLTESTS_QS_FILE_2 = "interp-alltests-query-string-part-2.scm"
+EVAL_QS_FILE_1 = "interp-eval-query-string-part-1.scm"
+EVAL_QS_FILE_2 = "interp-eval-query-string-part-2.scm"
+BARLIMAN_QUERY_SIMPLE_FILE = "barliman-query-simple.scm"
+BARLIMAN_QUERY_ALLTESTS_FILE = "barliman-query-alltests.scm"
 
 """
 Minikanren file names
 """
-MK_VICARE_F = "mk-vicare.scm"
-MK_F = "mk.scm"
+MK_VICARE_FILE = "mk-vicare.scm"
+MK_FILE = "mk.scm"
+MK_TEST_CHECK_FILE = "test-check.scm"
+INTERP_FILE = "interp.scm"
 
 """
 File paths
@@ -54,41 +60,59 @@ File paths
 TMP_DIR = os.path.join(os.environ.get("TMP", "/tmp"), "barliman_tmp")
 os.makedirs(TMP_DIR, exist_ok=True)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MINIKANREN_CORE_DIR = os.path.join(BASE_DIR, "minikanren", "core")
+MINIKANREN_ROOT = os.path.join(BASE_DIR, "minikanren", "core")
 REL_INTERP_DIR = os.path.join(BASE_DIR, "minikanren", "rel-interp")
 TEMPLATES_DIR = os.path.join(BASE_DIR, "minikanren", "templates")
 
-MK_VICARE = os.path.join(MINIKANREN_CORE_DIR, MK_VICARE_F)
-MK = os.path.join(MINIKANREN_CORE_DIR, MK_F)
+MK_VICARE_FULLPATH = os.path.join(MINIKANREN_ROOT, MK_VICARE_FILE)
+MK_FULLPATH = os.path.join(MINIKANREN_ROOT, MK_FILE)
+MK_TEST_CHECK_FULLPATH = os.path.join(MINIKANREN_ROOT, MK_TEST_CHECK_FILE)
+INTERP_FULLPATH = os.path.join(REL_INTERP_DIR, INTERP_FILE)
 
-INTERP_ALLTESTS_P_1 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_F_1)
-INTERP_ALLTESTS_P_2 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_F_2)
-INTERP_EVAL_P_1 = os.path.join(TEMPLATES_DIR, EVAL_QS_F_1)
-INTERP_EVAL_P_2 = os.path.join(TEMPLATES_DIR, EVAL_QS_F_2)
+CORE_FULLPATH = [
+    MK_VICARE_FULLPATH,
+    MK_FULLPATH,
+    MK_TEST_CHECK_FULLPATH,
+    INTERP_FULLPATH,
+]
+
+
+INTERP_ALLTESTS_P_1 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_FILE_1)
+INTERP_ALLTESTS_P_2 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_FILE_2)
+INTERP_EVAL_P_1 = os.path.join(TEMPLATES_DIR, EVAL_QS_FILE_1)
+INTERP_EVAL_P_2 = os.path.join(TEMPLATES_DIR, EVAL_QS_FILE_2)
 
 """
 System paths and configuration
 """
 # Process timeouts in milliseconds - increase for debugging
-TEST_TIMEOUT_MS = 60000  # 60 seconds for testing
-PROCESS_TIMEOUT_MS = 120000  # 120 seconds for processes
+TEST_TIMEOUT_MS = 5000  # 5 seconds for testing
+PROCESS_TIMEOUT_MS = 600000  # 60 seconds for processes
+
+
+# Scheme executable detection
+def find_scheme_executable():
+    potential_executables = ["scheme", "chez", "chezscheme"]
+
+    if platform.system() == "Windows":
+        potential_executables = [exe + ".exe" for exe in potential_executables]
+
+    for exe in potential_executables:
+        if os.system(f"which {exe} > /dev/null 2>&1") == 0:
+            return exe
+
+    return None
+
 
 # Find Scheme executable
-SCHEME_EXECUTABLE = None
-potential_executables = ["chez", "scheme"]
-for executable in potential_executables:
-    if any(
-        os.access(os.path.join(path, executable), os.X_OK)
-        for path in os.environ["PATH"].split(os.pathsep)
-    ):
-        SCHEME_EXECUTABLE = executable
-        good(f"Found Scheme executable: {executable}")
-        break
-else:
+SCHEME_EXECUTABLE = find_scheme_executable()
+if not SCHEME_EXECUTABLE:
     warn(
-        f"Could not find Scheme executable in PATH. Looked for: {', '.join(potential_executables)}"
+        f"Could not find Scheme executable in PATH. Looked for: {', '.join(['scheme', 'chez', 'chezscheme'])}"
     )
-    exit(1)
+    sys.exit(1)
+else:
+    good(f"Found Scheme executable: {SCHEME_EXECUTABLE}")
 
 """
 Load query strings from files
@@ -160,9 +184,8 @@ DEFAULT_TEST_EXPECTED_OUTPUTS = [
 Scheme code constants
 """
 
-LOAD_MK_VICARE = f'(load "{MK_VICARE}")'
-LOAD_MK = f'(load "{MK}")'
-
+LOAD_MK_VICARE_SCM = f'(load "{MK_VICARE_FULLPATH}")'
+LOAD_MK_SCM = f'(load "{MK_FULLPATH}")'
 
 SIMPLE_Q = "simple"
 INDIVIDUAL_Q = "individual test"
