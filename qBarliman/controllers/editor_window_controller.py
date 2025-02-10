@@ -267,7 +267,13 @@ class EditorWindowController(QMainWindow):
             # Kill all subprocesses
             for op in self.processingQueue:
                 try:
-                    op.process.kill()
+                    if op.process and op.process.state() == QProcess.ProcessState.Running:
+                        debug(f"cleanup: Killing process for {op.taskType}")
+                        op.process.kill()
+                        op.process.waitForFinished(1000) # give it a chance to close
+                        op.process.close()
+                    else:
+                        debug(f"cleanup: Process for {op.taskType} is not running or does not exist")
                 except AttributeError:
                     warn(f"$$$$  Could not kill process for {op}")
         # Stop all timers
@@ -417,6 +423,13 @@ class EditorWindowController(QMainWindow):
         elif taskType == "error":  # Handle errors
             self.errorOutputView.setPlainText(output)
             self.errorOutputView.show()  # Show error output view when errors occur
+
+        # Remove the operation from the processing queue
+        for op in list(self.processingQueue):  # Iterate over a copy of the list
+            if op.taskType == taskType:
+                self.processingQueue.remove(op)
+                debug(f"handleOperationFinished: Removed operation {taskType} from processingQueue")
+                break # Exit loop after removing the operation
 
     def handleStatusUpdate(self, taskType: str, status: str, color: str):
         debug(
