@@ -1,19 +1,35 @@
-We are porting swift code to a cross-platform, python3, qt6 gui program.
+# qBarliman Project Guidelines
 
-We are using Pyside6 as our import of choice, not PyQt6. Maintain Qt best practices.
+## Core Principles
 
-We are using string templates to construct scheme programs based on the user's input.
+- **Vision**: Create a cross-platform Python 3, Qt 6 GUI program.
+- **GUI Development**: Use PySide6 for Qt 6 development. Avoid PyQt6.
+- **Scheme Handling**: Use string templates for Scheme code generation. Keep reference implementations intact.
+- **External Execution**: Launch Scheme programs externally and ensure proper UI interop.
+- **Project Size**: Keep the project small, simple, and minimal. UI should be basic but functional.
+- **Dependencies**: Use a minimal number of libraries. Avoid unnecessary dependencies.
 
-We launch scheme programs, and support interop between them and the UI.
+## Development Practices
 
-The scheme templates are not to be altered. 
+- **MVC Pattern**: Implement strict separation of concerns:
+  - **Model**: Encapsulate business logic and data storage.
+  - **View**: Handle UI presentation and user interaction.
+  - **Controller**: Coordinate between model and view.
+- **Communication**: Use signals and slots for decoupled communication between model and view.
+- **Property Decorators**: Use `Property` decorators in models to expose properties and notify changes.
+- **Loose Coupling**: Ensure components are loosely coupled for easy testing and maintenance.
 
-The project will be small, simple, and minimal. The UI will be basic and functional.
+## Logging and Debugging
 
-Libraries to be used are to be kept to a STRICT minimum.
+- **Logging System**: Use provided logging system with enum: WARN, GOOD, INFO, DEBUG.
+- **Console Logs**: Keep logs meaningful and avoid unnecessary verbosity.
 
-We will NOT be implementing spinners, just timers.
+## Performance and Threading
 
-We have implemented in constants, a simple logging system. Use WARN, GOOD, INFO, DEBUG for console logs.
+- **Timers**: Implement timers for asynchronous operations. Avoid spinners.
+- **Threading**: Use QThreadPool for background tasks. Avoid GUI updates from non-main threads.
 
-Clean up any #...Other cleanup steps, or TODOs, or excessive comments.
+## Code Quality and Maintenance
+- **Clean Code**: Maintain a clean, modular, and well-documented codebase.
+- **Comments**: Remove any unnecessary comments or TODOs.
+- **Testing**: Test all components separately. Use unit tests for core logic.
