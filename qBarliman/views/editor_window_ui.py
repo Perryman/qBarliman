@@ -4,7 +4,7 @@ from PySide6.QtCore import Signal, Qt
 
 from qBarliman.widgets.scheme_editor_text_view import SchemeEditorTextView
 
-class EditorWindowUI(QMainWindow):
+class EditorWindowUI(QWidget):  # Changed from QMainWindow to QWidget
     # Signals for user interactions
     definitionTextChanged = Signal(str)
     testInputsChanged = Signal(list, list)  # (test_inputs, expected_outputs)
@@ -13,19 +13,13 @@ class EditorWindowUI(QMainWindow):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("qBarliman")
-        self.setGeometry(100, 100, 800, 600)
         self._buildUI()
     
     def _buildUI(self):
         default_font = QFont("Monospace", 16)
         default_font.setStyleHint(QFont.StyleHint.Monospace)
         
-        # Create the central widget
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        
-        self.mainLayout = QVBoxLayout(central_widget)
+        self.mainLayout = QVBoxLayout(self)
         
         # Scheme definition and best guess area in a splitter.
         self.schemeDefinitionView = SchemeEditorTextView(self)

@@ -1,1 +1,0 @@
-"""qBarliman widgets package"""

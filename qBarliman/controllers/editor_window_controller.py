@@ -2,7 +2,7 @@ import os
 import traceback
 from typing import List
 from PySide6.QtWidgets import QMainWindow, QTextEdit, QLineEdit, QLabel
-from PySide6.QtCore import QThreadPool, QTimer, Slot, Property, QObject
+from PySide6.QtCore import QThreadPool, QTimer, Slot, Property, QObject, Signal
 
 from qBarliman.operations.run_scheme_operation import RunSchemeOperation, EditorWindowInterface
 from qBarliman.constants import *
@@ -13,15 +13,33 @@ from qBarliman.views.editor_window_ui import EditorWindowUI
 class EditorWindowController(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.model = None
-        self.view = None
+        self.model = SchemeDocument()
+        self.mainWindow = QMainWindow()
+        self.view = EditorWindowUI()
+        self.mainWindow.setCentralWidget(self.view)
+        self.query_builder = QueryBuilder("some_interpreter_code") # Replace with actual code loading
+        self.threadPool = QThreadPool()
+        self.run_code_timer = QTimer()
+        self.run_code_timer.setInterval(1000)  # Adjust interval as needed
+        self.run_code_timer.timeout.connect(self.runCodeFromEditPane)
         self.setup_connections()
+
+    def setWindowTitle(self, title: str):
+        self.mainWindow.setWindowTitle(title)
+
+    def resize(self, width: int, height: int):
+        self.mainWindow.resize(width, height)
+
+    def show(self):
+        self.mainWindow.show()
 
     def set_model(self, model: SchemeDocument):
         self.model = model
+        self.setup_connections()
 
     def set_view(self, view: EditorWindowUI):
         self.view = view
+        self.setup_connections()
 
     def setup_connections(self):
         if self.model and self.view:
@@ -30,34 +48,34 @@ class EditorWindowController(QObject):
             self.model.testCasesChanged.connect(self.view.setTestStatus)
             
             # View to Model
-            self.view.definitionTextChanged.connect(self.model.set_definitionText)
-            self.view.testInputChanged.connect(self.model.setTestInput)
-            self.view.testOutputChanged.connect(self.model.setTestExpected)
+            self.view.definitionTextChanged.connect(self.on_definition_text_changed)
+            self.view.testInputChanged.connect(self.on_test_input_changed)
+            self.view.testOutputChanged.connect(self.on_test_output_changed)
 
-    @Slot(str)
-    def on_definition_text_changed(self, text: str) -> None:
+    @Slot()
+    def on_definition_text_changed(self) -> None:
         """Handle changes to the definition text"""
-        self.model.set_definitionText(text)
+        self.model.set_definitionText(self.view.schemeDefinitionView.toPlainText())
         self.run_code_timer.start()
     
-    @Slot(list, list)
-    def on_test_inputs_changed(self, inputs: List[str], expected: List[str]) -> None:
+    @Slot()
+    def on_test_inputs_changed(self) -> None:
         """Handle changes to test inputs/outputs"""
+        inputs = [inp.text() for inp in self.view.testInputs]
+        expected = [exp.text() for exp in self.view.testExpectedOutputs]
         self.model.updateTests(inputs, expected)
         self.run_code_timer.start()
     
-    @Slot(int)
-    def on_test_input_changed(self, test_number: int) -> None:
+    @Slot(int, str)
+    def on_test_input_changed(self, test_number: int, text: str) -> None:
         """Handle changes to individual test inputs"""
-        test_value = self.view.testInputs[test_number - 1].text()
-        self.model.setTestInput(test_number, test_value)
+        self.model.setTestInput(test_number, text)
         self.run_code_timer.start()
     
-    @Slot(int)
-    def on_test_output_changed(self, test_number: int) -> None:
+    @Slot(int, str)
+    def on_test_output_changed(self, test_number: int, text: str) -> None:
         """Handle changes to individual test outputs"""
-        test_value = self.view.testExpected[test_number - 1].text()
-        self.model.setTestExpected(test_number, test_value)
+        self.model.setTestExpected(test_number, text)
         self.run_code_timer.start()
 
     @Slot()
@@ -127,12 +145,12 @@ class EditorWindowController(QObject):
         info("cleaning up!")
         try:
             # Stop all timers first
-            for timer in self.findChildren(QTimer):
+            for timer in self.mainWindow.findChildren(QTimer):
                 if timer.isActive():
                     timer.stop()
 
             # Clean up processes
-            for operation in self.findChildren(RunSchemeOperation):
+            for operation in self.mainWindow.findChildren(RunSchemeOperation):
                 if operation is not None and operation.isRunning():
                     debug("!!! cancel called!")
                     try:
@@ -153,18 +171,17 @@ class EditorWindowController(QObject):
         debug("Editor Window closing...")
         try:
             self.cleanup()
+            self.mainWindow.closeEvent(event)
             event.accept()
         except Exception as e:
             warn(f"Error during window close: {e}")
             debug(f"Traceback: {traceback.format_exc()}")
             event.ignore()
-        finally:
-            super().closeEvent(event)
 
     def cancel_all_operations(self) -> None:
         """Cancel all running operations"""
         debug("Cancelling all operations")
-        for operation in self.findChildren(RunSchemeOperation):
+        for operation in self.mainWindow.findChildren(RunSchemeOperation):
             if operation.isRunning():
                 try:
                     operation.cancel()
@@ -200,3 +217,7 @@ class EditorWindowController(QObject):
     @property
     def testStatusLabels(self) -> list[QLabel]:
         return self.view.testStatusLabels
+
+    def loadInterpreterCode(self, code: str) -> None:
+        """Load the interpreter code"""
+        self.query_builder = QueryBuilder(code)

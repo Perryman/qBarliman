@@ -1,1 +1,0 @@
-"""qBarliman operations package"""
