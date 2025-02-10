@@ -91,10 +91,10 @@ EVAL_T = Template(
     f"""
 {EVAL_STRING_PART_1}
 
-        (== `(  defns  ) defn-list)
+        (== `(  $defns  ) defn-list)
 
 {EVAL_STRING_PART_2}
- (evalo `(begin $defns   body )  $expectedOut ))))
+ (evalo `(begin $defns   $body )  $expectedOut ))))
 """
 )
 

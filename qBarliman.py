@@ -1,36 +1,37 @@
 #!/usr/bin/env python3
-import sys, signal
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QProcess
+
+import sys
+import traceback
+from PySide6.QtWidgets import QApplication
 from qBarliman.controllers.editor_window_controller import EditorWindowController
-
-
-def signal_handler(signum, frame):
-    print("Received SIGINT. Shutting down gracefully...")
-    window.cancel_all_operations()  # Kill all subprocesses.
-    QApplication.quit()
-
+from qBarliman.constants import *
+from qBarliman.models.scheme_document import SchemeDocument
+from qBarliman.views.editor_window_ui import EditorWindowUI
 
 def main():
     app = QApplication(sys.argv)
-    global window
-    window = EditorWindowController()
-    signal.signal(signal.SIGINT, signal_handler)
-
-    try:
-        window.setWindowTitle("qBarliman")
-        screen = app.primaryScreen()
-        screen_size = screen.size()
-        window_width = min(1200, screen_size.width())
-        window_height = min(1000, screen_size.height())
-        window.resize(window_width, window_height)
-        window.show()
-    except Exception as e:
-        print("Failed to load interpreter code. Exiting...")
-        sys.exit(1)
-
-    sys.exit(app.exec())
-
+    app.setQuitOnLastWindowClosed(True)
+    
+    # Create the model
+    model = SchemeDocument(
+        definition_text="",
+        test_inputs=[""] * 6,
+        test_expected=[""] * 6
+    )
+    
+    # Create the view
+    view = EditorWindowUI()
+    
+    # Create the controller
+    controller = EditorWindowController()
+    controller.set_model(model)
+    controller.set_view(view)
+    
+    # Show the view
+    view.show()
+    
+    # Start the application
+    return app.exec()
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

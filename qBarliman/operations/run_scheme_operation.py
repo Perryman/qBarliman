@@ -1,325 +1,661 @@
-import time
 import os
-from PySide6.QtCore import QThread, Signal, QProcess, Slot
+import signal
+import shutil
+import time
+import traceback
+from dataclasses import dataclass
+from typing import Optional, Any, cast, Protocol, List
+from PySide6.QtCore import QObject, QRunnable, Signal, QProcess, Slot, Qt, QTimer, QMetaObject
 from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QTextEdit, QLineEdit, QLabel
 from qBarliman.constants import *
 
+@dataclass
+class ProcessResult:
+    output: str
+    error: str
+    exit_code: int
+    crashed: bool
 
-class RunSchemeOperation(QThread):
+class EditorWindowInterface(Protocol):
+    """Protocol defining required editor window interface"""
+    def cancel_all_operations(self) -> None: ...
+    def cleanup(self) -> None: ...
+    def updateBestGuess(self, taskType: str, output: str) -> None: ...
+    @property
+    def schemeDefinitionView(self) -> QTextEdit: ...
+    @property
+    def bestGuessView(self) -> QTextEdit: ...
+    @property
+    def testInputs(self) -> List[QLineEdit]: ...
+    @property
+    def testExpectedOutputs(self) -> List[QLineEdit]: ...
+    @property
+    def testStatusLabels(self) -> List[QLabel]: ...
+
+class RunSchemeOperation(QObject, QRunnable):
+    """Operation that executes a scheme process"""
+
+    # Signals
     finishedSignal = Signal(str, str)  # (taskType, output)
     statusUpdateSignal = Signal(str, str, str)  # (taskType, status, color)
-    timerUpdateSignal = Signal(str, bool)  # (taskType, isRunning) # Changed to boolean
+    timerUpdateSignal = Signal(str, bool)  # (taskType, isRunning)
 
-    def __init__(self, editor_window_controller, schemeScriptPathString, taskType):
-        super().__init__()
+    # UI Status strings
+    ILLEGAL_SEXPR_STRING = "Illegal sexpression"
+    PARSE_ERROR_STRING = "Syntax error"
+    EVALUATION_FAILED_STRING = "Evaluation failed"
+    THINKING_STRING = "???"
+
+    def __init__(self, editor_window_controller: EditorWindowInterface, schemeScriptPathString: str, taskType: str):
+        QObject.__init__(self)
+        QRunnable.__init__(self)
         self.editor_window_controller = editor_window_controller
         self.schemeScriptPathString = schemeScriptPathString
         self.taskType = taskType
-        self._isCanceled = False
-        self.process = None
+        self.task: Optional[QProcess] = None
         self.start_time = time.monotonic()
+        
+        # Initialize output buffers
+        self._stdout_data = bytearray()
+        self._stderr_data = bytearray()
+        self._killed = False
+        self._interrupted = False
+        self._process_result: Optional[ProcessResult] = None
 
-        # Basic status constants - use QColor for consistency if needed later
-        self.DEFAULT_COLOR = "black" #QColor(0, 0, 0) # Black
-        self.SYNTAX_ERROR_COLOR = "orange" #QColor(255, 165, 0) # Orange
-        self.PARSE_ERROR_COLOR = "magenta" #QColor(255, 0, 255) # Magenta
-        self.FAILED_ERROR_COLOR = "red" #QColor(255, 0, 0) # Red
-        self.THINKING_COLOR = "purple" #QColor(128, 0, 128) # Purple
+        # Define colors once using Qt's color constants
+        self.colors = {
+            'default': QColor(Qt.GlobalColor.black),
+            'syntax_error': QColor(Qt.GlobalColor.darkYellow),
+            'parse_error': QColor(Qt.GlobalColor.yellow),
+            'failed': QColor(Qt.GlobalColor.red),
+            'thinking': QColor(Qt.GlobalColor.magenta)
+        }
 
-        self.ILLEGAL_SEXPR_STRING = "Illegal sexpression"
-        self.PARSE_ERROR_STRING = "Syntax error"
-        self.EVALUATION_FAILED_STRING = "Evaluation failed"
-        self.THINKING_STRING = "???"
+    def requestInterruption(self) -> None:
+        """Request operation interruption"""
+        self._interrupted = True
 
+    def isInterruptionRequested(self) -> bool:
+        """Check if interruption was requested"""
+        return self._interrupted
 
-    def run(self):
-        if self._isCanceled:
-            print("RunSchemeOperation: Operation was canceled before start")
+    def isRunning(self) -> bool:
+        """Check if operation is running"""
+        return not self._killed and not self._interrupted
+
+    def run(self) -> None:
+        """Execute the scheme process"""
+        if self.isInterruptionRequested():
+            debug("*** cancelled immediately! ***")
             return
 
         try:
-            print(f"RunSchemeOperation: Creating process for {self.taskType}")
-            self.process = QProcess()
-            self.process.finished.connect(self.handleProcessFinished)
-            self.process.readyReadStandardOutput.connect(self.readStandardOutput)
-            self.process.readyReadStandardError.connect(self.readStandardError)
-            self.process.errorOccurred.connect(self.handleProcessError)
+            self._stdout_data.clear()
+            self._stderr_data.clear()
+            self.start_time = time.monotonic()
+            
+            self._update_thinking_state()
+            self.timerUpdateSignal.emit(self.taskType, True)
 
-            print(
-                f"RunSchemeOperation: Starting process with script {self.schemeScriptPathString}"
-            )
-            self.process.start(SCHEME_EXECUTABLE, [self.schemeScriptPathString])
-            print("RunSchemeOperation: Process started.")
-            self.timerUpdateSignal.emit(self.taskType, True) # Timer starts
+            self._setup_process()
+            self._launch_process()
+        except KeyboardInterrupt:
+            debug("Received keyboard interrupt in run method")
+            self._graceful_shutdown()
+        except Exception as e:
+            warn(f"Error in run method: {e}")
+            debug(f"Traceback: {traceback.format_exc()}")
+            self.handle_process_error(QProcess.ProcessError.FailedToStart)
 
-            # Wait briefly for process to start
-            if not self.process.waitForStarted(1000):
-                print("RunSchemeOperation: Process failed to start within timeout!")
+    def _update_thinking_state(self) -> None:
+        """Update UI elements to show thinking state"""
+        self.statusUpdateSignal.emit(self.taskType, self.THINKING_STRING, self.colors['thinking'].name())
+
+    def _graceful_shutdown(self) -> None:
+        """Perform graceful shutdown operations"""
+        try:
+            self.editor_window_controller.cancel_all_operations()
+            if self.task and self.task.state() != QProcess.ProcessState.NotRunning:
+                self.capture_remaining_output()
+                self._terminate_process()
+            self.cleanupProcess()
+        except Exception as e:
+            warn(f"Error during graceful shutdown: {e}")
+            debug(f"Traceback: {traceback.format_exc()}")
+        finally:
+            self.requestInterruption()
+
+    def _setup_process(self) -> None:
+        """Configure the QProcess for scheme execution"""
+        # Clean up any existing process first
+        if self.task:
+            self.cleanupProcess()
+            
+        # Create process with proper parent
+        self.task = QProcess(self)
+        
+        # Set up process configuration
+        self.task.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
+        self.task.setInputChannelMode(QProcess.InputChannelMode.ManagedInputChannel)
+        self.task.setWorkingDirectory(os.path.dirname(self.schemeScriptPathString))
+        
+        # Set process environment if needed
+        env = QProcess.systemEnvironment()
+        self.task.setEnvironment(env)
+        
+        # Connect signals using direct connections for better error handling
+        self.task.finished.connect(self.handleProcessFinished, Qt.ConnectionType.DirectConnection)
+        self.task.errorOccurred.connect(self.handle_process_error, Qt.ConnectionType.DirectConnection)
+        self.task.readyReadStandardOutput.connect(self._handle_stdout, Qt.ConnectionType.DirectConnection)
+        self.task.readyReadStandardError.connect(self._handle_stderr, Qt.ConnectionType.DirectConnection)
+        
+        # Set process state
+        self.task.setProcessState(QProcess.ProcessState.NotRunning)
+
+    def _verify_scheme_executable(self) -> bool:
+        """Verify that the scheme executable exists and is accessible"""
+        if not SCHEME_EXECUTABLE:
+            warn("!!! SCHEME_EXECUTABLE not set")
+            return False
+            
+        scheme_path = shutil.which(SCHEME_EXECUTABLE)
+        if not scheme_path:
+            warn(f"!!! Could not find {SCHEME_EXECUTABLE} in PATH")
+            return False
+            
+        if not os.access(scheme_path, os.X_OK):
+            warn(f"!!! {scheme_path} is not executable")
+            return False
+            
+        good(f"Found Scheme executable at: {scheme_path}")  # Changed to good() for consistency
+        return True
+
+    def _launch_process(self) -> None:
+        """Launch the scheme process with proper error recovery"""
+        try:
+            info("*** launching Scheme process")
+            
+            # Verify scheme executable and get its full path
+            if not self._verify_scheme_executable():
+                self._handle_process_error(QProcess.ProcessError.FailedToStart)
+                return
+                
+            scheme_path = shutil.which(SCHEME_EXECUTABLE)
+            if not scheme_path:  # Double check path
+                warn("Scheme path is None after verification")
+                self._handle_process_error(QProcess.ProcessError.FailedToStart)
+                return
+                
+            debug(f"*** launchPath: {scheme_path}")
+            debug(f"*** arguments: ['{self.schemeScriptPathString}']")
+
+            # Verify script file exists
+            if not os.path.exists(self.schemeScriptPathString):
+                warn(f"!!! Script file not found: {self.schemeScriptPathString}")
+                self._handle_process_error(QProcess.ProcessError.FailedToStart)
+                return
+                
+            # Set up fresh process
+            self._setup_process()
+            if not self.task:
+                warn("!!! Failed to create QProcess")
+                self._handle_process_error(QProcess.ProcessError.FailedToStart)
+                return
+
+            # Set up process recovery timer
+            recovery_timer = QTimer(self)
+            recovery_timer.setSingleShot(True)
+            recovery_timer.timeout.connect(self._handle_process_stall)
+            recovery_timer.start(5000)  # 5 second timeout
+            
+            # Start process
+            args = ["--script", self.schemeScriptPathString]
+            debug(f"Starting process with args: {args}")
+            self.task.start(scheme_path, args)
+            
+            if not self.task.waitForStarted(3000):
+                warn("!!! Process failed to start within timeout")
+                self._handle_process_error(QProcess.ProcessError.FailedToStart)
+                return
+            
+            recovery_timer.stop()
+            
+            pid = self.task.processId()
+            if pid:
+                good(f"*** launched process {pid}")
+                # Set up stall detection
+                stall_timer = QTimer(self)
+                stall_timer.timeout.connect(self._check_process_responsive)
+                stall_timer.start(2000)  # Check every 2 seconds
             else:
-                print(
-                    f"RunSchemeOperation: Process state after start: {self.process.state()}"
-                )
+                warn("!!! Process started but no PID obtained")
+                
+            if self.taskType == "simple" and not self.waitForSchemeProcess():
+                warn("!!! Process timed out")
+                self._handle_process_error(QProcess.ProcessError.Timedout)
 
         except Exception as e:
-            print(f"RunSchemeOperation: Exception during process start: {e}")
-            self.finishedSignal.emit(self.taskType, f"Error: {e}")
-            self.timerUpdateSignal.emit(self.taskType, False) # Timer stops on error
-
-    def cancel(self):
-        debug(
-            f"RunSchemeOperation.cancel: entry - Canceling operation for taskType={self.taskType}"
-        )
-        if self.process:
-            debug(
-                f"RunSchemeOperation.cancel: - Process state before terminate: {self.process.state()}"
-            )
-            debug(
-                f"RunSchemeOperation.cancel: - Process ID: {self.process.processId()}"
-            )
-
-        self._isCanceled = True
-        if self.process and self.process.state() == QProcess.ProcessState.Running:
-            debug("RunSchemeOperation.cancel: Attempting graceful termination")
-            self.process.terminate()  # Try terminate first
-            if not self.process.waitForFinished(1000):  # Wait up to 1 second
-                debug(
-                    "RunSchemeOperation.cancel: Process didn't terminate, forcing kill"
-                )
-                self.process.kill()  # Force kill if terminate doesn't work
-                debug("RunSchemeOperation.cancel: Kill successful")
-            else:
-                debug("RunSchemeOperation.cancel: Terminate successful")
-        else:
-            debug("RunSchemeOperation.cancel: Process is not running or does not exist")
-
-        if self.process:
-            debug(
-                f"RunSchemeOperation.cancel: - Process state after terminate: {self.process.state()}"
-            )
-        self.timerUpdateSignal.emit(self.taskType, False) # Timer stops on cancel
-
+            warn(f"!!! Error launching process: {e}")
+            debug(f"Traceback: {traceback.format_exc()}")
+            self._handle_process_error(QProcess.ProcessError.FailedToStart)
 
     @Slot()
-    def handleProcessFinished(self):
-        debug("RunSchemeOperation.handleProcessFinished: ENTRY - handler called!")
-        debug(
-            f"RunSchemeOperation.handleProcessFinished: Process finished at {time.time():.3f}"
-        )
-        output = self.process.readAllStandardOutput().data().decode()
-        err = self.process.readAllStandardError().data().decode()
-        exit_code = self.process.exitCode()
-        exit_status = self.process.exitStatus()
+    def _handle_process_stall(self):
+        """Handle case where process appears to be stalled"""
+        if not self.task:
+            return
+            
+        warn("Process appears to be stalled during startup")
+        self._handle_process_error(QProcess.ProcessError.Timedout)
 
-        debug(
-            f"RunSchemeOperation.handleProcessFinished: Exit code: {exit_code}"
-        )
-        debug(
-            f"RunSchemeOperation.handleProcessFinished: Exit status: {exit_status}"
-        )
+    @Slot()
+    def _check_process_responsive(self):
+        """Check if process is still responsive"""
+        if not self.task or not self._is_process_running():
+            return
+            
+        try:
+            pid = self.task.processId()
+            if pid:
+                # On Unix systems, sending signal 0 tests process existence
+                if os.name == 'posix':
+                    try:
+                        os.kill(pid, 0)
+                    except ProcessLookupError:
+                        warn(f"Process {pid} no longer exists")
+                        self._handle_process_error(QProcess.ProcessError.Crashed)
+                    except PermissionError:
+                        warn(f"Process {pid} exists but we can't access it")
+                        self._handle_process_error(QProcess.ProcessError.UnknownError)
+                elif self.task.state() == QProcess.ProcessState.NotRunning:
+                    warn(f"Process {pid} is not running")
+                    self._handle_process_error(QProcess.ProcessError.Crashed)
+        except Exception as e:
+            warn(f"Error checking process responsiveness: {e}")
+            debug(f"Traceback: {traceback.format_exc()}")
 
-        debug(
-            f"RunSchemeOperation.handleProcessFinished: Output size: {len(output)} bytes"
-        )
-        if output:
-            debug(
-                f"RunSchemeOperation.handleProcessFinished: First 100 chars: {output[:100]}"
+    def waitForSchemeProcess(self, timeout: int = 30000) -> bool:
+        """Wait for the scheme process to complete with timeout"""
+        if self._is_process_running() and self.task:
+            return self.task.waitForFinished(timeout)
+        return True
+
+    @Slot()
+    def _handle_stdout(self) -> None:
+        """Handle stdout data safely using Qt's object system"""
+        if not self.task or self._killed:
+            return
+        try:
+            data = self.task.readAllStandardOutput().data()
+            if data:
+                # Use invokeMethod for thread-safe updates
+                QMetaObject.invokeMethod(
+                    self,
+                    "_append_stdout",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(bytes, data)
+                )
+        except Exception as e:
+            warn(f"Error handling stdout: {e}")
+
+    @Slot()
+    def _handle_stderr(self) -> None:
+        """Handle stderr data safely using Qt's object system"""
+        if not self.task or self._killed:
+            return
+        try:
+            data = self.task.readAllStandardError().data()
+            if data:
+                # Use invokeMethod for thread-safe updates
+                QMetaObject.invokeMethod(
+                    self,
+                    "_append_stderr",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(bytes, data)
+                )
+        except Exception as e:
+            warn(f"Error handling stderr: {e}")
+
+    @Slot(bytes)
+    def _append_stdout(self, data: bytes):
+        """Thread-safe stdout append"""
+        if not self._killed:
+            self._stdout_data.extend(data)
+
+    @Slot(bytes)
+    def _append_stderr(self, data: bytes):
+        """Thread-safe stderr append"""
+        if not self._killed:
+            self._stderr_data.extend(data)
+
+    @Slot()
+    def handleProcessFinished(self) -> None:
+        """Handle process completion with Qt's event system"""
+        if not self.task:
+            return
+            
+        try:
+            # Capture process info before cleanup
+            exit_code = self.task.exitCode()
+            crash_signal = self.task.exitStatus() == QProcess.ExitStatus.CrashExit
+            
+            # Use invokeMethod for thread-safe updates
+            QMetaObject.invokeMethod(
+                self,
+                "_handle_completion",
+                Qt.ConnectionType.QueuedConnection,
+                Q_ARG(int, exit_code),
+                Q_ARG(bool, crash_signal)
             )
-        if err:
-            debug(f"RunSchemeOperation.handleProcessFinished: Error: {err}")
 
-        self.timerUpdateSignal.emit(self.taskType, False) # Timer stops on finish
+        except Exception as e:
+            warn(f"Error in process completion handler: {e}")
+            debug(f"Traceback: {traceback.format_exc()}")
+        finally:
+            self.cleanupProcess()
 
-        datastring = output
-        errorDatastring = err
-        taskType = self.taskType
-        ewc = self.editor_window_controller
+    @Slot(int, bool)
+    def _handle_completion(self, exit_code: int, crash_signal: bool):
+        """Thread-safe completion handling"""
+        self.capture_remaining_output()
 
+        output = self._stdout_data.decode().strip() if self._stdout_data else ""
+        error = self._stderr_data.decode().strip() if self._stderr_data else ""
 
-        if exit_code == 0: # Exit status 0 means ran to completion, but could still be errors in query
-            debug(f"RunSchemeOperation.handleProcessFinished: Process finished successfully with exit code 0.")
-            # print the output
-            debug(f"Output: {datastring}")
-            if self.taskType == "simple":
-                if datastring.strip() == "parse-error-in-defn":
-                    self.parseErrorInDefn()
-                elif datastring.strip() == "illegal-sexp-in-defn":
-                    self.illegalSexpInDefn()
-                elif datastring.strip() == "()":
-                    self.evaluationFailedInDefn() # New function to handle evaluation failure
-                else:
-                    self.defaultDefnStatus()
-            elif taskType.startswith("test"): # "test1", "test2", ..., "test6"
-                self.onTestCompletion(datastring)
-            elif self.taskType == "allTests":
-                if datastring.strip() == "fail":
-                    self.onBestGuessFailure()
-                else:
-                    self.onBestGuessSuccess(datastring)
+        debug(f"datastring: {output}")
+        if error:
+            warn(f"error datastring: {error}")
 
-        elif exit_code == 15: # SIGTERM - Canceled
-            debug(f"RunSchemeOperation.handleProcessFinished: Process was canceled with SIGTERM.")
-            print(f"SIGTERM !!!  taskType = {self.taskType}")
-            if self.taskType == "allTests":
-                self.onBestGuessKilled()
-            elif taskType.startswith("test"):
-                self.onTestSuccess() #Assume tests succeed if allTests cancelled them
+        self.timerUpdateSignal.emit(self.taskType, False)
 
-        else: # Other exit codes indicate Chez Scheme error (syntax, etc)
-            debug(f"RunSchemeOperation.handleProcessFinished: Process finished with error exit code {exit_code}.")
-            if self.taskType == "simple":
-                print(f"exitStatus = {exit_code}")
-                self.illegalSexpInDefn()
-            elif taskType.startswith("test"):
-                self.onTestSyntaxError()
-            elif taskType == "allTests":
-                self.onSyntaxErrorBestGuess()
-
-        print(f"datastring for process {self.process.processId()}: {datastring.strip()}")
-        print(f"error datastring for process {self.process.processId()}: {errorDatastring.strip()}")
-        if self.process:
-            self.process.close()
-
-
-    def readStandardOutput(self):
-        # In this version, output is processed in handleProcessFinished
-        pass
-
-    def readStandardError(self):
-        # In this version, errors are processed in handleProcessFinished
-        pass
-
-    def handleProcessError(self, error):
-        debug(
-            f"RunSchemeOperation.handleProcessError: ENTRY - handler called! error={error}")
-        debug(f"RunSchemeOperation.handleProcessError: State={self.process.state()}")
-        debug(f"RunSchemeOperation.handleProcessError: Error={self.process.error()}")
-        debug(
-            f"RunSchemeOperation.handleProcessError: ExitCode={self.process.exitCode()}")
-        self.finishedSignal.emit(
-            self.taskType, f"Process error: {self.process.error()}")
-        self.timerUpdateSignal.emit(self.taskType, False) # Timer stops on error
-        if self.process:
-            self.process.close()
-
-
-    # --- UI Update Functions (Python version using signals) ---
-
-    def illegalSexpInDefn(self):
-        self.statusUpdateSignal.emit(self.taskType, self.ILLEGAL_SEXPR_STRING, self.SYNTAX_ERROR_COLOR)
-
-    def parseErrorInDefn(self):
-        self.statusUpdateSignal.emit(self.taskType, self.PARSE_ERROR_STRING, self.PARSE_ERROR_COLOR)
-        self.editor_window_controller.cancel_all_operations() # Cancel all tests
-
-    def evaluationFailedInDefn(self): # New function
-        self.statusUpdateSignal.emit(self.taskType, self.EVALUATION_FAILED_STRING, self.FAILED_ERROR_COLOR)
-        self.editor_window_controller.cancel_all_operations() # Cancel all tests
-
-    def defaultDefnStatus(self):
-        self.statusUpdateSignal.emit(self.taskType, "", self.DEFAULT_COLOR) # Clear status, default color
-
-    def thinkingColorAndLabel(self):
-        self.statusUpdateSignal.emit(self.taskType, self.THINKING_STRING, self.THINKING_COLOR)
-
-    def onTestCompletion(self, datastring):
-        ewc = self.editor_window_controller
-        test_num = int(self.taskType[4:]) # Extract test number from "testN"
-        input_field = ewc.testInputs[test_num-1]
-        output_field = ewc.testExpectedOutputs[test_num-1]
-        label = ewc.testStatusLabels[test_num-1]
-
-        if datastring.strip() == "illegal-sexp-in-test/answer":
-            self.onTestSyntaxErrorUI(input_field, output_field, label, self.ILLEGAL_SEXPR_STRING, self.SYNTAX_ERROR_COLOR)
-            ewc.cancel_all_operations()
-        elif datastring.strip() == "parse-error-in-test/answer":
-            self.onTestParseErrorUI(input_field, output_field, label, self.PARSE_ERROR_STRING, self.PARSE_ERROR_COLOR)
-            ewc.cancel_all_operations()
-        elif datastring.strip() in ["illegal-sexp-in-defn", "parse-error-in-defn", "()"]: # Definition errors or eval fail
-            self.onTestThinkingUI(input_field, output_field, label, self.THINKING_STRING, self.THINKING_COLOR)
-        elif datastring.strip() == "()": # Evaluator query failed!
-            self.onTestFailure()
-        else: # Parsed, and evaluator query succeeded!
-            self.onTestSuccess()
-
-
-    def onTestSuccess(self):
-        ewc = self.editor_window_controller
-        test_num = int(self.taskType[4:]) # e.g., from "test1" get 1
-        label = ewc.testStatusLabels[test_num-1]
-        elapsed_time = time.monotonic() - self.start_time
-        status_message = f"Succeeded ({elapsed_time:.2f} s)"
-        self.statusUpdateSignal.emit(self.taskType, status_message, self.DEFAULT_COLOR)
-
-
-    def onTestFailure(self):
-        ewc = self.editor_window_controller
-        test_num = int(self.taskType[4:])
-        label = ewc.testStatusLabels[test_num-1]
-        elapsed_time = time.monotonic() - self.start_time
-        status_message = f"Failed ({elapsed_time:.2f} s)"
-        self.statusUpdateSignal.emit(self.taskType, status_message, self.FAILED_ERROR_COLOR)
-        ewc.cancel_all_operations() # Cancel all tests if one fails
-
-    def onTestSyntaxError(self):
-        ewc = self.editor_window_controller
-        test_num = int(self.taskType[4:])
-        label = ewc.testStatusLabels[test_num-1]
-        self.onTestSyntaxErrorUI(ewc.testInputs[test_num-1], ewc.testExpectedOutputs[test_num-1], label, self.ILLEGAL_SEXPR_STRING, self.SYNTAX_ERROR_COLOR)
-
-
-    def onBestGuessSuccess(self, guess):
-        ewc = self.editor_window_controller
-        elapsed_time = time.monotonic() - self.start_time
-
-        if guess.strip() in ["illegal-sexp-in-defn", "parse-error-in-defn", "illegal-sexp-in-test/answer", "parse-error-in-test/answer"]:
-            ewc.updateBestGuess(self.taskType, "") # Clear best guess view
-            self.statusUpdateSignal.emit(self.taskType, self.THINKING_STRING, self.THINKING_COLOR) # Thinking color/label
+        if crash_signal:
+            warn("Process crashed")
+            self._handle_process_error(QProcess.ProcessError.Crashed)
+        elif exit_code == 0:
+            self._handle_successful_completion(output)
+        elif exit_code == 15:  # SIGTERM
+            self._handle_termination()
         else:
-            ewc.updateBestGuess(self.taskType, guess)
-            status_message = f"Succeeded ({elapsed_time:.2f} s)"
-            self.statusUpdateSignal.emit(self.taskType, status_message, self.DEFAULT_COLOR)
-            ewc.cancel_all_operations() # Cancel other operations if best guess succeeds
+            warn(f"Process exited with code {exit_code}")
+            self._handle_failed_completion()
 
+    def _handle_successful_completion(self, output: str):
+        """Handle successful process completion"""
+        if self.taskType == "simple":
+            self._handle_simple_completion(output)
+        elif self.taskType.startswith("test"):
+            self._handle_test_completion(output)
+        elif self.taskType == "allTests":
+            self._handle_alltest_completion(output)
 
-    def onBestGuessFailure(self):
-        ewc = self.editor_window_controller
+    def _handle_simple_completion(self, output: str):
+        """Handle completion of simple evaluation task"""
+        if output == "parse-error-in-defn":
+            self._update_simple_ui(self.PARSE_ERROR_STRING, self.colors['parse_error'])
+        elif output == "illegal-sexp-in-defn":
+            self._update_simple_ui(self.ILLEGAL_SEXPR_STRING, self.colors['syntax_error'])
+        elif output == "()":
+            self._update_simple_ui(self.EVALUATION_FAILED_STRING, self.colors['failed'])
+        else:
+            self._update_simple_ui("", self.colors['default'])
+
+    def _update_simple_ui(self, status: str, color: QColor):
+        """Update UI for simple task completion"""
+        self.statusUpdateSignal.emit(self.taskType, status, color.name())
+        if hasattr(self.editor_window_controller, 'schemeDefinitionView'):
+            self.editor_window_controller.schemeDefinitionView.setStyleSheet(
+                f"color: {color.name()};")
+        if status in [self.ILLEGAL_SEXPR_STRING, self.PARSE_ERROR_STRING, self.EVALUATION_FAILED_STRING]:
+            self.editor_window_controller.cancel_all_operations()
+
+    def _handle_test_completion(self, output: str):
+        """Handle completion of test task"""
+        try:
+            test_num = int(self.taskType[4:])
+            if 1 <= test_num <= len(self.editor_window_controller.testInputs):
+                test_index = test_num - 1
+                elapsed_time = time.monotonic() - self.start_time
+
+                if output in ["illegal-sexp-in-test/answer", "parse-error-in-test/answer"]:
+                    self._handle_test_syntax_error(test_index)
+                elif output in ["illegal-sexp-in-defn", "parse-error-in-defn"]:
+                    self._handle_test_thinking(test_index)
+                elif output == "()":
+                    self._handle_test_failure(test_index, elapsed_time)
+                else:
+                    self._handle_test_success(test_index, elapsed_time)
+        except ValueError:
+            print(f"!!!!!!!!!! ERROR: invalid test number in taskType: {self.taskType}")
+
+    def _handle_test_syntax_error(self, test_index: int):
+        """Handle syntax error in test"""
+        self._update_test_ui(
+            test_index,
+            self.colors['syntax_error'],
+            self.ILLEGAL_SEXPR_STRING
+        )
+        self.editor_window_controller.cancel_all_operations()
+
+    def _handle_test_thinking(self, test_index: int):
+        """Handle thinking state in test"""
+        self._update_test_ui(
+            test_index,
+            self.colors['thinking'],
+            self.THINKING_STRING
+        )
+
+    def _handle_test_failure(self, test_index: int, elapsed_time: float):
+        """Handle test failure"""
+        status = f"Failed ({elapsed_time:.2f} s)"
+        self._update_test_ui(
+            test_index,
+            self.colors['failed'],
+            status
+        )
+        self.editor_window_controller.cancel_all_operations()
+
+    def _handle_test_success(self, test_index: int, elapsed_time: float):
+        """Handle test success"""
+        status = f"Succeeded ({elapsed_time:.2f} s)"
+        self._update_test_ui(
+            test_index,
+            self.colors['default'],
+            status
+        )
+
+    def _handle_alltest_completion(self, output: str):
+        """Handle completion of allTests task"""
         elapsed_time = time.monotonic() - self.start_time
-        ewc.updateBestGuess(self.taskType, "") # Clear best guess view
-        status_message = f"Failed ({elapsed_time:.2f} s)"
-        self.statusUpdateSignal.emit(self.taskType, status_message, self.FAILED_ERROR_COLOR)
-        ewc.cancel_all_operations() # Cancel other operations if best guess fails
-
-    def onBestGuessKilled(self):
         ewc = self.editor_window_controller
-        ewc.updateBestGuess(self.taskType, "") # Clear best guess view
-        self.statusUpdateSignal.emit(self.taskType, "", self.DEFAULT_COLOR) # Clear status, default color
 
+        if output == "fail":
+            self._handle_best_guess_failure(elapsed_time)
+        elif output in ["illegal-sexp-in-defn", "parse-error-in-defn",
+                       "illegal-sexp-in-test/answer", "parse-error-in-test/answer"]:
+            self._handle_best_guess_thinking()
+        else:
+            self._handle_best_guess_success(output, elapsed_time)
 
-    def onSyntaxErrorBestGuess(self):
-        ewc = self.editor_window_controller
-        ewc.updateBestGuess(self.taskType, "") # Clear best guess view
-        self.statusUpdateSignal.emit(self.taskType, "", self.DEFAULT_COLOR) # Clear status, default color
+    def _handle_best_guess_failure(self, elapsed_time: float):
+        """Handle best guess failure"""
+        self.editor_window_controller.updateBestGuess(self.taskType, "")
+        status = f"Failed ({elapsed_time:.2f} s)"
+        self.statusUpdateSignal.emit(self.taskType, status, self.colors['failed'].name())
+        self.editor_window_controller.cancel_all_operations()
 
+    def _handle_best_guess_thinking(self):
+        """Handle best guess thinking state"""
+        self.editor_window_controller.updateBestGuess(self.taskType, "")
+        self.statusUpdateSignal.emit(self.taskType, self.THINKING_STRING, self.colors['thinking'].name())
 
-    # --- UI Helper functions ---
-    def onTestSyntaxErrorUI(self, input_field, output_field, label, message, color):
-        self.setTestFieldColor(input_field, color)
-        self.setTestFieldColor(output_field, color)
-        self.setTestLabelStatus(label, message, color)
+    def _handle_best_guess_success(self, guess: str, elapsed_time: float):
+        """Handle best guess success"""
+        self.editor_window_controller.updateBestGuess(self.taskType, guess)
+        self._set_best_guess_font()
+        status = f"Succeeded ({elapsed_time:.2f} s)"
+        self.statusUpdateSignal.emit(self.taskType, status, self.colors['default'].name())
+        self.editor_window_controller.cancel_all_operations()
 
-    def onTestParseErrorUI(self, input_field, output_field, label, message, color):
-        self.setTestFieldColor(input_field, color)
-        self.setTestFieldColor(output_field, color)
-        self.setTestLabelStatus(label, message, color)
+    def _set_best_guess_font(self):
+        """Set the font for best guess view"""
+        if hasattr(self.editor_window_controller, 'bestGuessView'):
+            view = self.editor_window_controller.bestGuessView
+            font = view.font()
+            font.setFamily("Lucida Console")
+            font.setPointSize(12)
+            view.setFont(font)
 
-    def onTestThinkingUI(self, input_field, output_field, label, message, color):
-        self.setTestFieldColor(input_field, color)
-        self.setTestFieldColor(output_field, color)
-        self.setTestLabelStatus(label, message, color)
+    def _handle_termination(self):
+        """Handle process termination"""
+        debug(f"SIGTERM !!! taskType = {self.taskType}")
+        
+        if self.taskType == "allTests":
+            self.editor_window_controller.updateBestGuess(self.taskType, "")
+            self.statusUpdateSignal.emit(self.taskType, "", self.colors['default'].name())
+        elif self.taskType.startswith("test"):
+            # Individual tests succeed when killed by allTests success
+            self._handle_test_success(int(self.taskType[4:]) - 1, time.monotonic() - self.start_time)
 
-    def setTestFieldColor(self, field, color_str):
-        field.setStyleSheet(f"color: {color_str};")
+    def _handle_failed_completion(self):
+        """Handle failed process completion"""
+        if self.task:
+            warn(f"exitStatus = {self.task.exitCode()}")
+            if self.taskType == "simple":
+                self._update_simple_ui(self.ILLEGAL_SEXPR_STRING, self.colors['syntax_error'])
+            elif self.taskType.startswith("test"):
+                test_num = int(self.taskType[4:])
+                self._handle_test_syntax_error(test_num - 1)
+            elif self.taskType == "allTests":
+                self.editor_window_controller.updateBestGuess(self.taskType, "")
+                self.statusUpdateSignal.emit(self.taskType, "", self.colors['default'].name())
 
-    def setTestLabelStatus(self, label, status_str, color_str):
-        label.setText(status_str)
-        label.setStyleSheet(f"color: {color_str};")
+    def cleanupProcess(self) -> None:
+        """Clean up process resources using Qt's object hierarchy"""
+        try:
+            if self.task:
+                task = self.task
+                self.task = None
+                
+                if task.state() != QProcess.ProcessState.NotRunning:
+                    debug("Cleaning up running process...")
+                    self.capture_remaining_output()
+                    self._terminate_process()
+                
+                task.close()
+                # Let Qt's parent-child relationship handle deletion
+                task.setParent(None)
+                task.deleteLater()
+                good("Process cleaned up successfully")
+        except Exception as e:
+            warn(f"Error during process cleanup: {e}")
+            debug(f"Traceback: {traceback.format_exc()}")
+        finally:
+            self.task = None
+
+    def _terminate_process(self) -> None:
+        """Use Qt's built-in process management"""
+        if not self.task:
+            return
+            
+        try:
+            pid = self.task.processId()
+            if not pid:
+                return
+                
+            debug(f"Attempting to terminate process {pid}")
+            
+            # Use Qt's built-in termination
+            self.task.terminate()
+            if not self.task.waitForFinished(1000):
+                warn(f"Process {pid} didn't terminate gracefully, forcing kill")
+                self.task.kill()
+                
+                # Let the event loop process the kill
+                if not QThread.msleep(100) or not self.task.waitForFinished(1000):
+                    warn(f"Process {pid} didn't respond to kill")
+                    if os.name == 'posix':
+                        try:
+                            os.kill(pid, signal.SIGKILL)
+                            debug(f"Sent SIGKILL to process {pid}")
+                        except ProcessLookupError:
+                            debug(f"Process {pid} already gone")
+                        except Exception as e:
+                            warn(f"Failed to force kill process {pid}: {e}")
+                else:
+                    debug(f"Process {pid} killed successfully")
+            else:
+                debug(f"Process {pid} terminated gracefully")
+                
+        except Exception as e:
+            warn(f"Error terminating process: {e}")
+            debug(f"Traceback: {traceback.format_exc()}")
+        finally:
+            self.capture_remaining_output()
+
+    def capture_remaining_output(self) -> None:
+        """Capture any remaining stdout/stderr data"""
+        if not self.task:
+            return
+            
+        try:
+            if self.task.bytesAvailable():
+                self._stdout_data.extend(self.task.readAllStandardOutput().data())
+            stderr_bytes = self.task.readAllStandardError()
+            if not stderr_bytes.isEmpty():
+                self._stderr_data.extend(stderr_bytes.data())
+        except Exception as e:
+            warn(f"Error capturing output: {e}")
+            debug(f"Traceback: {traceback.format_exc()}")
+
+    @Slot(QProcess.ProcessError)
+    def handle_process_error(self, error: QProcess.ProcessError) -> None:
+        """Handle QProcess errors with strong typing"""
+        if self._killed:
+            return
+            
+        try:
+            error_messages = {
+                QProcess.ProcessError.FailedToStart: "Process failed to start. Check if Scheme is installed.",
+                QProcess.ProcessError.Crashed: "Process crashed.",
+                QProcess.ProcessError.Timedout: "Process timed out.",
+                QProcess.ProcessError.WriteError: "Error writing to process.",
+                QProcess.ProcessError.ReadError: "Error reading from process.",
+                QProcess.ProcessError.UnknownError: "Unknown process error."
+            }
+            
+            error_msg = error_messages.get(error, "Process error occurred")
+            warn(f"!!! Process error: {error_msg}")
+            
+            QMetaObject.invokeMethod(
+                self,
+                "_emit_error_signals",
+                Qt.ConnectionType.QueuedConnection,
+                Q_ARG(str, error_msg)
+            )
+            
+            if error not in [QProcess.ProcessError.WriteError, QProcess.ProcessError.ReadError]:
+                QMetaObject.invokeMethod(
+                    self.editor_window_controller,
+                    "cancel_all_operations",
+                    Qt.ConnectionType.QueuedConnection
+                )
+        except Exception as e:
+            warn(f"Error handling process error: {e}")
+            debug(f"Traceback: {traceback.format_exc()}")
+
+    @Slot(str)
+    def _emit_error_signals(self, error_msg: str) -> None:
+        """Thread-safe error signal emission"""
+        if not self._killed:
+            self.statusUpdateSignal.emit(self.taskType, error_msg, self.colors['failed'].name())
+            self.timerUpdateSignal.emit(self.taskType, False)
+
+    def _store_process_result(self, output: str, error: str, exit_code: int, crashed: bool) -> None:
+        """Thread-safe process result storage"""
+        self._process_result = ProcessResult(
+            output=output,
+            error=error,
+            exit_code=exit_code,
+            crashed=crashed
+        )
