@@ -1,45 +1,43 @@
-from PySide6.QtWidgets import (
-    QMainWindow,
-    QTextEdit,
-    QLineEdit,
-    QLabel,
-    QGridLayout,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QSplitter,
-)
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QFont
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtWidgets import (
+    QGridLayout,
+    QLabel,
+    QLineEdit,
+    QSplitter,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from qBarliman.widgets.scheme_editor_text_view import SchemeEditorTextView
 
 
-class EditorWindowUI(QWidget):  # Changed from QMainWindow to QWidget
-    # Signals for user interactions
-    definitionTextChanged = Signal(str)
-    testInputsChanged = Signal(list, list)  # (test_inputs, expected_outputs)
-    testInputChanged = Signal(int, str)  # test number (1-based)
-    testOutputChanged = Signal(int, str)  # test number (1-based)
+class EditorWindowUI(QWidget):
+    """Main editor window UI component (declarative and reactive)."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._buildUI()
-
-    def setMainWindow(self, mainWindow: QMainWindow) -> None:
-        """Set up this widget as the central widget of a QMainWindow"""
-        if not isinstance(mainWindow, QMainWindow):
-            raise TypeError("mainWindow must be a QMainWindow")
-        self.setParent(mainWindow)
-        mainWindow.setCentralWidget(self)
+        self._widget_map = {  # Key: signal name, Value: (widget, setter_method)
+            "definition_text": (
+                self.schemeDefinitionView,
+                lambda widget, text: widget.setPlainText(text),
+            ),
+            "best_guess": (self.bestGuessView, self.bestGuessView.setPlainText),
+            "definition_status": (self.definitionStatusLabel, self._set_labeled_text),
+            "best_guess_status": (self.bestGuessStatusLabel, self._set_labeled_text),
+            "error_output": (self.errorOutputView, self._set_error_text),
+            # No entry for test cases, handled separately
+        }
 
     def _buildUI(self):
+        # UI building logic remains the same (declarative)
         default_font = QFont("Monospace", 16)
         default_font.setStyleHint(QFont.StyleHint.Monospace)
 
         self.mainLayout = QVBoxLayout(self)
 
-        # Scheme definition and best guess area in a splitter.
         self.schemeDefinitionView = SchemeEditorTextView(self)
         self.schemeDefinitionView.setFont(default_font)
         self.schemeDefinitionView.setPlaceholderText("Enter Scheme definitions...")
@@ -59,19 +57,19 @@ class EditorWindowUI(QWidget):  # Changed from QMainWindow to QWidget
         self.splitter.addWidget(self.errorOutputView)
         self.mainLayout.addWidget(self.splitter)
 
-        # Status labels area.
         self.definitionStatusLabel = QLabel("", self)
         self.bestGuessStatusLabel = QLabel("", self)
         self.mainLayout.addWidget(self.definitionStatusLabel)
         self.mainLayout.addWidget(self.bestGuessStatusLabel)
 
-        # Create grid for test inputs, expected outputs and status labels.
         self.testInputs = []
         self.testExpectedOutputs = []
         self.testStatusLabels = []
         self.testsGrid = QGridLayout()
+
         for i in range(6):
-            self.testsGrid.addWidget(QLabel(f"Test {i+1}:"), i, 0)
+            test_num = i + 1
+            self.testsGrid.addWidget(QLabel(f"Test {test_num}:"), i, 0)
             input_field = QLineEdit(self)
             input_field.setFont(default_font)
             self.testInputs.append(input_field)
@@ -83,56 +81,39 @@ class EditorWindowUI(QWidget):  # Changed from QMainWindow to QWidget
             status_label = QLabel("", self)
             self.testStatusLabels.append(status_label)
             self.testsGrid.addWidget(status_label, i, 3)
-
-            # Connect individual test field signals
-            input_field.textChanged.connect(
-                lambda text, idx=i: self.testInputChanged.emit(idx + 1, text)
-            )
-            expected_field.textChanged.connect(
-                lambda text, idx=i: self.testOutputChanged.emit(idx + 1, text)
-            )
-
         self.mainLayout.addLayout(self.testsGrid)
 
-        # Connect definition text change
-        self.schemeDefinitionView.textChanged.connect(
-            lambda: self.definitionTextChanged.emit(
-                self.schemeDefinitionView.toPlainText()
-            )
-        )
+    @Slot(str, object)
+    def update_ui(self, signal_name: str, data: object):
+        """Generic UI update slot."""
+        if signal_name in self._widget_map:
+            widget, setter = self._widget_map[signal_name]
+            setter(widget, data)  # Call the appropriate setter
+        elif signal_name == "test_cases":
+            self._set_test_cases(data)  # data will now be a tuple
+        else:
+            print(f"Warning: Unhandled signal '{signal_name}'")
 
-        # Connect overall test changes
-        for inp, exp in zip(self.testInputs, self.testExpectedOutputs):
-            inp.textChanged.connect(self._emitTestChange)
-            exp.textChanged.connect(self._emitTestChange)
+    def _set_labeled_text(self, label: QLabel, data: tuple[str, str]):
+        """Helper to set text and color on a label."""
+        text, color = data
+        label.setText(text)
+        label.setStyleSheet(f"color: {color};")
 
-    def _emitTestChange(self):
-        """Emit signal when any test input/output changes"""
-        inputs = [inp.text() for inp in self.testInputs]
-        expected = [exp.text() for exp in self.testExpectedOutputs]
-        self.testInputsChanged.emit(inputs, expected)
+    def _set_error_text(self, view: QTextEdit, data: str):
+        if data:
+            view.setPlainText(data)
+            view.show()
+        else:
+            view.clear()
+            view.hide()
 
-    # UI update helpers
-    def setBestGuess(self, text: str):
-        self.bestGuessView.setPlainText(text)
-
-    def setDefinitionStatus(self, status: str, color: str):
-        self.definitionStatusLabel.setText(status)
-        self.definitionStatusLabel.setStyleSheet(f"color: {color};")
-
-    def setBestGuessStatus(self, status: str, color: str):
-        self.bestGuessStatusLabel.setText(status)
-        self.bestGuessStatusLabel.setStyleSheet(f"color: {color};")
-
-    def setTestStatus(self, index: int, status: str, color: str):
-        if 0 <= index < len(self.testStatusLabels):
-            self.testStatusLabels[index].setText(status)
-            self.testStatusLabels[index].setStyleSheet(f"color: {color};")
-
-    def showErrorOutput(self, text: str):
-        self.errorOutputView.setPlainText(text)
-        self.errorOutputView.show()
-
-    def clearErrorOutput(self):
-        self.errorOutputView.clear()
-        self.errorOutputView.hide()
+    @Slot(list, list)
+    def _set_test_cases(self, data: tuple[list[str], list[str]]):
+        """Update all test input and expected output fields."""
+        inputs, expected = data
+        for i, (inp, exp) in enumerate(zip(inputs, expected)):
+            if i < len(self.testInputs):
+                self.testInputs[i].setText(inp)
+            if i < len(self.testExpectedOutputs):
+                self.testExpectedOutputs[i].setText(exp)

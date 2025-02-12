@@ -1,5 +1,15 @@
 from string import Template
-from qBarliman.constants import *
+
+from qBarliman.constants import (
+    ALLTESTS_STRING_PART_1,
+    ALLTESTS_STRING_PART_2,
+    EVAL_FLAGS_COMPLETE,
+    EVAL_FLAGS_FAST,
+    EVAL_STRING_COMPLETE,
+    EVAL_STRING_FAST,
+    EVAL_STRING_PART_1,
+    EVAL_STRING_PART_2,
+)
 
 """
 Template definitions for query strings and other frequently used code.

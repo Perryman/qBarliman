@@ -3,3 +3,5 @@ cocoa/Barliman.xcodeproj/project.xcworkspace/xcuserdata/
 **__pycache__
 **/cocoa
 **.vscode
+.windsurfrules
+.*cache*

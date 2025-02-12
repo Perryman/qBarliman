@@ -1,11 +1,14 @@
 import os
-import sys
 import platform
+import shutil  # added import
+import sys
+import tempfile
+from typing import Optional
 
 """
 Temporary flags
 """
-VERBOSE = 3  # Temporary good functions because I don't want accidental import bloat
+VERBOSE = 3
 WARN = "❌‼️‼️"  # 0
 GOOD = "✅"  # 1
 INFO = "✏️"  # 2
@@ -14,22 +17,22 @@ DEBUG = "🐞"  # 3
 USE_COLORS = sys.stdout.isatty()
 
 
-def warn(*args):
+def warn(*args) -> None:
     if VERBOSE >= 0:
         print(f"\033[33m{WARN}\033[0m" if USE_COLORS else WARN, *args)
 
 
-def good(*args):
+def good(*args) -> None:
     if VERBOSE >= 1:
         print(f"\033[32m{GOOD}\033[0m" if USE_COLORS else GOOD, *args)
 
 
-def info(*args):
+def info(*args) -> None:
     if VERBOSE >= 2:
         print(f"\033[37m{INFO}\033[0m" if USE_COLORS else INFO, *args)
 
 
-def debug(*args):
+def debug(*args) -> None:
     if VERBOSE >= 3:
         print(f"\033[36m{DEBUG}\033[0m" if USE_COLORS else DEBUG, *args)
 
@@ -57,8 +60,7 @@ INTERP_FILE = "interp.scm"
 File paths
 """
 
-TMP_DIR = os.path.join(os.environ.get("TMP", "/tmp"), "barliman_tmp")
-os.makedirs(TMP_DIR, exist_ok=True)
+TMP_DIR = tempfile.mkdtemp(prefix="barliman_tmp_")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MINIKANREN_ROOT = os.path.join(BASE_DIR, "minikanren", "core")
 REL_INTERP_DIR = os.path.join(BASE_DIR, "minikanren", "rel-interp")
@@ -91,14 +93,21 @@ PROCESS_TIMEOUT_MS = 600000  # 60 seconds for processes
 
 
 # Scheme executable detection
-def find_scheme_executable():
+def find_scheme_executable() -> Optional[str]:
+    """
+    Find the Scheme executable in the system PATH.
+
+    Returns:
+        Optional[str]: The name of the Scheme executable if found, otherwise None.
+    """
     potential_executables = ["scheme", "chez", "chezscheme"]
 
     if platform.system() == "Windows":
         potential_executables = [exe + ".exe" for exe in potential_executables]
 
     for exe in potential_executables:
-        if os.system(f"which {exe} > /dev/null 2>&1") == 0:
+        # use shutil.which instead of os.system to locate the executable safely
+        if shutil.which(exe) is not None:
             return exe
 
     return None
@@ -114,9 +123,7 @@ if not SCHEME_EXECUTABLE:
 else:
     good(f"Found Scheme executable: {SCHEME_EXECUTABLE}")
 
-"""
-Load query strings from files
-"""
+# Load query strings from files
 
 ALLTESTS_STRING_PART_1 = ""
 ALLTESTS_STRING_PART_2 = ""

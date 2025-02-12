@@ -1,91 +1,99 @@
-from typing import Optional, List
-from PySide6.QtCore import QObject, Signal, Property
+from typing import List, Optional
+
+from PySide6.QtCore import QObject, Signal
+
+from ..constants import (
+    DEFAULT_DEFINITIONS,
+    DEFAULT_TEST_EXPECTED_OUTPUTS,
+    DEFAULT_TEST_INPUTS,
+)
+from .scheme_document_data import SchemeDocumentData
 
 
 class SchemeDocument(QObject):
-    """Model representing a Scheme document with definition and test cases"""
+    """QObject wrapper around an immutable SchemeDocumentData."""
 
+    # Signals for changes.
     definitionTextChanged = Signal(str)
-    testCasesChanged = Signal(list, list)  # Emits test_inputs and test_expected
-    statusChanged = Signal(str)  # Emits current evaluation status
+    testCasesChanged = Signal(
+        list, list
+    )  # Emits copies of test_inputs and test_expected.
+    statusChanged = Signal(str)
 
     def __init__(
         self,
-        definition_text: str = "",
+        definition_text: str = "\n".join(DEFAULT_DEFINITIONS),
         test_inputs: Optional[List[str]] = None,
         test_expected: Optional[List[str]] = None,
     ):
         super().__init__()
-        self._definition_text = definition_text
-        self._test_inputs = test_inputs if test_inputs is not None else [""] * 6
-        self._test_expected = test_expected if test_expected is not None else [""] * 6
-        self._status = ""
-        self._is_valid = True
+        self._data = SchemeDocumentData(
+            definition_text=definition_text,
+            test_inputs=(
+                test_inputs if test_inputs is not None else DEFAULT_TEST_INPUTS.copy()
+            ),
+            test_expected=(
+                test_expected
+                if test_expected is not None
+                else DEFAULT_TEST_EXPECTED_OUTPUTS.copy()
+            ),
+        )
 
-    @Property(str, notify=definitionTextChanged)
+    @property
     def definition_text(self) -> str:
-        """The main Scheme definition text"""
-        return self._definition_text
+        return self._data.definition_text
 
-    @definition_text.setter
-    def definition_text(self, value: str) -> None:
-        if value != self._definition_text:
-            self._definition_text = value
-            self.definitionTextChanged.emit(value)
-
-    @Property(list, notify=testCasesChanged)
+    @property
     def test_inputs(self) -> List[str]:
-        """Test input cases"""
-        return self._test_inputs.copy()
+        return self._data.test_inputs.copy()
 
-    @Property(list, notify=testCasesChanged)
+    @property
     def test_expected(self) -> List[str]:
-        """Expected test outputs"""
-        return self._test_expected.copy()
+        return self._data.test_expected.copy()
 
-    @Property(str, notify=statusChanged)
+    @property
     def status(self) -> str:
-        """Current evaluation status"""
-        return self._status
+        return self._data.status
 
-    @status.setter
-    def set_status(self, value: str) -> None:
-        if value != self._status:
-            self._status = value
-            self.statusChanged.emit(value)
-
-    @Property(bool)
+    @property
     def is_valid(self) -> bool:
-        """Whether the current Scheme code is valid"""
-        return self._is_valid
+        return self._data.is_valid
 
-    def setTestInput(self, test_number: int, value: str) -> None:
-        """Set a specific test input"""
-        if 1 <= test_number <= len(self._test_inputs):
-            if self._test_inputs[test_number - 1] != value:
-                self._test_inputs[test_number - 1] = value
-                self.testCasesChanged.emit(
-                    self._test_inputs.copy(), self._test_expected.copy()
-                )
+    def update_definition_text(self, new_text: str) -> None:
+        if new_text != self._data.definition_text:
+            self._data = self._data.update_definition_text(new_text)
+            self.definitionTextChanged.emit(new_text)
 
-    def setTestExpected(self, test_number: int, value: str) -> None:
-        """Set a specific test expected output"""
-        if 1 <= test_number <= len(self._test_expected):
-            if self._test_expected[test_number - 1] != value:
-                self._test_expected[test_number - 1] = value
-                self.testCasesChanged.emit(
-                    self._test_inputs.copy(), self._test_expected.copy()
-                )
+    def update_test_input(self, test_number: int, value: str) -> None:
+        index = test_number - 1
+        if (
+            0 <= index < len(self._data.test_inputs)
+            and self._data.test_inputs[index] != value
+        ):
+            self._data = self._data.update_test_input(index, value)
+            self.testCasesChanged.emit(
+                self._data.test_inputs.copy(), self._data.test_expected.copy()
+            )
 
-    def updateTests(self, inputs: List[str], expected: List[str]) -> None:
-        """Update all test cases at once"""
-        if inputs != self._test_inputs or expected != self._test_expected:
-            self._test_inputs = inputs.copy()
-            self._test_expected = expected.copy()
-            self.testCasesChanged.emit(self._test_inputs, self._test_expected)
+    def update_test_expected(self, test_number: int, value: str) -> None:
+        index = test_number - 1
+        if (
+            0 <= index < len(self._data.test_expected)
+            and self._data.test_expected[index] != value
+        ):
+            self._data = self._data.update_test_expected(index, value)
+            self.testCasesChanged.emit(
+                self._data.test_inputs.copy(), self._data.test_expected.copy()
+            )
+
+    def update_tests(self, inputs: List[str], expected: List[str]) -> None:
+        if inputs != self._data.test_inputs or expected != self._data.test_expected:
+            self._data = self._data.update_tests(inputs, expected)
+            self.testCasesChanged.emit(
+                self._data.test_inputs.copy(), self._data.test_expected.copy()
+            )
 
     def validate(self) -> bool:
-        """Validate the current Scheme code and test cases"""
-        # Basic validation - could be extended with more sophisticated checks
-        self._is_valid = bool(self._definition_text.strip())
-        return self._is_valid
+        new_data = self._data.validate()
+        self._data = new_data
+        return new_data.is_valid
