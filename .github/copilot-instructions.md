@@ -1,5 +1,7 @@
 # qBarliman Project Guidelines
 
+Refactor to declarative, data-driven, signal/slot architecture.
+
 ## Core Principles
 
 - **Vision**: Create a cross-platform Python 3, Qt 6 GUI program.
@@ -30,6 +32,7 @@
 - **Threading**: Use QThreadPool for background tasks. Avoid GUI updates from non-main threads.
 
 ## Code Quality and Maintenance
+
 - **Clean Code**: Maintain a clean, modular, and well-documented codebase.
 - **Comments**: Remove any unnecessary comments or TODOs.
 - **Testing**: Test all components separately. Use unit tests for core logic.
