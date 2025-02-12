@@ -1,6 +1,6 @@
 import os
 
-from PySide6.QtCore import QObject, Slot
+from PySide6.QtCore import QObject, Slot, QTimer
 from PySide6.QtWidgets import QMainWindow
 
 from qBarliman.constants import (
@@ -8,14 +8,13 @@ from qBarliman.constants import (
     DEFAULT_TEST_EXPECTED_OUTPUTS,
     DEFAULT_TEST_INPUTS,
     TMP_DIR,
+    debug,
     info,
     warn,
 )
 from qBarliman.models.scheme_document import SchemeDocument
 from qBarliman.models.scheme_document_data import SchemeDocumentData
-from qBarliman.operations.scheme_execution_service import (
-    SchemeExecutionService,
-)
+from qBarliman.operations.scheme_execution_service import SchemeExecutionService
 from qBarliman.utils.load_interpreter import load_interpreter_code
 from qBarliman.utils.query_builder import QueryBuilder
 from qBarliman.views.editor_window_ui import EditorWindowUI
@@ -38,61 +37,149 @@ class EditorWindowController(QObject):
             raise RuntimeError("Interpreter load failed")
 
         self.execution_service = SchemeExecutionService()
-        # Initialize the model *after* setting up connections, and using default parameters
+
+        # Initialize model *before* connections, but *after* other setup.
         self.model = SchemeDocument(
             definition_text="\n".join(DEFAULT_DEFINITIONS),
             test_inputs=DEFAULT_TEST_INPUTS.copy(),
             test_expected=DEFAULT_TEST_EXPECTED_OUTPUTS.copy(),
         )
-        self.setup_connections()
-        self.initialize_ui()  # Added
-        self.mainWindow.show()
 
-    def initialize_ui(self):
-        # Trigger initial UI update.
-        self.view.update_ui("definition_text", self.model.definition_text)
-        self.view.update_ui(
-            "test_cases", (self.model.test_inputs, self.model.test_expected)
-        )
+        # Then setup connections after model exists
+        self.setup_connections()
+        self.mainWindow.show()
+        self.run_code()
+        # Define the output handling rules *declaratively*.
+        self._output_handlers = {
+            "simple": [
+                (
+                    "definition_status",
+                    lambda r: (
+                        r.message,
+                        self._get_status_color(r.status.name),
+                    ),
+                ),
+            ],
+            "allTests": [
+                ("best_guess", lambda r: r.output),
+                (
+                    "best_guess_status",
+                    lambda r: (
+                        r.message,
+                        self._get_status_color(r.status.name),
+                    ),
+                ),
+            ],
+            "test": [  # Prefix match
+                ("test_status", self._get_test_status_update),
+            ],
+            "__default__": [],  # Default: do nothing
+        }
+        # Debounce timer
+        self.run_code_timer = QTimer()
+        self.run_code_timer.setSingleShot(True)
+        self.run_code_timer.timeout.connect(self._run_code_debounce)  # type: ignore
+        self._debounce_interval = 0.5  # seconds
+        self._pending_task_type = None
+
+    def _get_status_color(self, status_name: str) -> str:
+        """Get color name for a given status."""
+        return self.execution_service.colors.get(
+            status_name.lower(), self.execution_service.colors["default"]
+        ).name()
+
+    def _get_test_status_update(self, result):
+        try:
+            index = int(self._current_task_type[4:]) - 1  # Extract index
+            if 0 <= index < len(self.view.testStatusLabels):
+                return (
+                    index,
+                    result.message,
+                    self._get_status_color(result.status.name),
+                )
+        except ValueError:
+            return None
 
     def update_model(self, updater):
-        """Applies an updater function to a *copy* of the model's data."""
+        """Applies an updater function and runs necessary tests."""
         new_data: SchemeDocumentData = updater(self.model._data)
-        if isinstance(new_data, SchemeDocumentData):
-            self.model._data = new_data  # Update the model's internal data
-            # Now, instead of calling runCodeFromEditPane, we emit the signals.
-            if new_data.definition_text != self.model.definition_text:
-                self.model.definitionTextChanged.emit(new_data.definition_text)
-            if (
-                new_data.test_inputs != self.model.test_inputs
-                or new_data.test_expected != self.model.test_expected
-            ):
-                self.model.testCasesChanged.emit(
-                    new_data.test_inputs, new_data.test_expected
-                )
-        else:
+        if not isinstance(new_data, SchemeDocumentData):
             raise TypeError(
                 "updater function must return a SchemeDocumentData instance"
             )
 
-    def run_code(self, task_type: str):
+        old_data = self.model._data
+        self.model._data = new_data  # Update *after* storing the old data
+
+        # Always emit signals *first*.
+        if new_data.definition_text != old_data.definition_text:
+            self.model.definitionTextChanged.emit(new_data.definition_text)
+
+        if (
+            new_data.test_inputs != old_data.test_inputs
+            or new_data.test_expected != old_data.test_expected
+        ):
+            self.model.testCasesChanged.emit(
+                new_data.test_inputs, new_data.test_expected
+            )
+
+        # Check for individual test changes *after* emitting signals.
+        old_inputs = old_data.test_inputs
+        new_inputs = new_data.test_inputs
+        old_expected = old_data.test_expected
+        new_expected = new_data.test_expected
+
+        if new_data.definition_text != old_data.definition_text:
+            self._schedule_run_code()  # Run either simple or allTests
+        elif any(
+            new_inputs[i] != old_inputs[i] or new_expected[i] != old_expected[i]
+            for i in range(len(new_inputs))
+            if i < len(old_inputs) and i < len(old_expected)
+        ):
+            for i in range(len(new_inputs)):
+                if i < len(old_inputs) and new_inputs[i] != old_inputs[i]:
+                    self._schedule_run_code(task_type=f"test{i + 1}")
+                    return
+                if i < len(old_expected) and new_expected[i] != old_expected[i]:
+                    self._schedule_run_code(task_type=f"test{i + 1}")
+                    return
+
+    def _schedule_run_code(self, task_type=None):
+        """Schedules run_code to be called after a debounce interval."""
+        self._pending_task_type = task_type
+        self.run_code_timer.start(int(self._debounce_interval * 1000))  # Convert to ms
+
+    @Slot()
+    def _run_code_debounce(self):
+        """Executes run_code with the pending task type (if any)."""
+        self.run_code(self._pending_task_type)
+        self._pending_task_type = None
+
+    def run_code(self, task_type=None):
         """Runs the Scheme code based on the current model."""
         if self.model.validate():
-            # Use the query builder to generate the script.
-            if task_type == "simple":
-                script = self.query_builder.build_simple_query(self.model._data)
-            elif task_type == "allTests":
+            # Determine which query to run based on the model state.
+            # If task_type is given, run it.
+            if task_type:
+                script = self.query_builder.build_test_query(
+                    self.model._data, int(task_type[4:])
+                )
+                self._current_task_type = task_type
+            elif any(self.model.test_inputs) or any(self.model.test_expected):
+                # If any test inputs or expected outputs are defined, run all tests.
                 script = self.query_builder.build_all_tests_query(self.model._data)
-            # ... other task types ...
+                self._current_task_type = "allTests"
             else:
-                return  # Or raise an exception
+                # Otherwise, run a simple query.
+                script = self.query_builder.build_simple_query(self.model._data)
+                self._current_task_type = "simple"
 
             # Create a temporary file for the script.
-            script_path = os.path.join(TMP_DIR, f"temp_script_{task_type}.scm")
+            script_path = os.path.join(TMP_DIR, f"{self._current_task_type}.scm")
             with open(script_path, "w") as f:
                 f.write(script)
 
-            self.execution_service.execute_scheme(script_path, task_type)
+            self.execution_service.execute_scheme(script_path, self._current_task_type)
 
     def setup_connections(self):
         # --- Connect Model Signals to View Slots ---
@@ -104,7 +191,9 @@ class EditorWindowController(QObject):
                 "test_cases", (inputs, expected)
             )
         )
-        # self.model.statusChanged.connect(...) # Connect if you have status updates
+        self.model.statusChanged.connect(  # Connect the status change
+            lambda status: self.view.update_ui("status", status)
+        )
 
         # --- Connect View Signals to Controller (Model Updates) ---
         self.view.schemeDefinitionView.textChanged.connect(
@@ -130,76 +219,51 @@ class EditorWindowController(QObject):
         # --- Connect Execution Service Signals ---
         self.execution_service.processStarted.connect(
             lambda task_type: info(f"Process started: {task_type}")
-        )  # Simple example
+        )
+        # Continue to write debug output handlers
         self.execution_service.processOutput.connect(self._handle_process_output)
         self.execution_service.processFinished.connect(self._handle_process_finished)
         self.execution_service.processError.connect(
-            lambda task_type, error: self.view.update_ui("error_output", error)
+            lambda task_type, error: (
+                (
+                    self.view.update_ui("error_output", f"{error=}"),
+                    debug(f"Connected signals. {error=}"),
+                )
+            )
         )
 
     @Slot(str, str, str)
     def _handle_process_output(self, task_type: str, stdout: str, stderr: str):
+        """Handles process output in a data-driven way."""
+
         if stderr:
             self.view.update_ui("error_output", stderr)
-        if stdout:
-            result = self.execution_service._process_output(stdout, task_type)
-            if task_type == "simple":
-                self.view.update_ui(
-                    "definition_status",
-                    (
-                        result.message,
-                        self.execution_service.colors.get(
-                            result.status.name.lower(),
-                            self.execution_service.colors["default"],
-                        ).name(),
-                    ),
-                )
-            elif task_type == "allTests":
-                self.view.update_ui("best_guess", result.output)
-                self.view.update_ui(
-                    "best_guess_status",
-                    (
-                        result.message,
-                        self.execution_service.colors.get(
-                            result.status.name.lower(),
-                            self.execution_service.colors["default"],
-                        ).name(),
-                    ),
-                )
+            return
 
-            elif task_type.startswith("test"):
-                try:
-                    index = int(task_type[4:]) - 1  # Extract and convert to 0-indexed
-                    if 0 <= index < len(self.view.testStatusLabels):
-                        self.view.update_ui(
-                            "test_status",
-                            (
-                                index,
-                                result.message,
-                                self.execution_service.colors.get(
-                                    result.status.name.lower(),
-                                    self.execution_service.colors["default"],
-                                ).name(),
-                            ),
-                        )
-                except ValueError:
-                    warn(f"Invalid test index: {task_type[4:]}")
+        if not stdout:
+            return
+        self._current_task_type = (
+            task_type  # We store it for use in _get_test_status_update
+        )
+        result = self.execution_service._process_output(stdout, task_type)
+
+        # Find the appropriate handler rules based on task_type.
+        handlers = self._output_handlers.get(task_type)
+        if not handlers:
+            for key, value in self._output_handlers.items():
+                if key.startswith("test") and task_type.startswith("test"):
+                    handlers = value
+                    break  # Use the handlers for test
+        if not handlers:
+            handlers = self._output_handlers["__default__"]  # Use default if necessary
+
+        # Apply all the handlers for this task type.
+        for signal_name, handler_func in handlers:
+            update_data = handler_func(result)
+            if update_data is not None:
+                self.view.update_ui(signal_name, update_data)
 
     @Slot(str, int)
     def _handle_process_finished(self, task_type: str, exit_code: int):
-        if exit_code != 0:
-            self.view.update_ui(
-                "error_output", f"Process for {task_type} exited with code {exit_code}"
-            )
-        else:
-            # If we're not already handling the output elsewhere, process it here
-            if task_type not in ["simple", "allTests"] and not task_type.startswith(
-                "test"
-            ):
-                result = self.execution_service._process_output("", task_type)
-                self.view.update_ui(
-                    f"{task_type}_status", (result.message, result.status.name.lower())
-                )
-
-        # Notify that the process has completed
-        self.view.update_ui("process_status", f"{task_type} completed")
+        info(f"Process finished: {task_type}, exit code: {exit_code}")
+        pass

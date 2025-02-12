@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from qBarliman.widgets.scheme_editor_text_view import SchemeEditorTextView
-
+from qBarliman.constants import warn, debug
 
 class EditorWindowUI(QWidget):
     """Main editor window UI component (declarative and reactive)."""
@@ -28,11 +28,9 @@ class EditorWindowUI(QWidget):
             "definition_status": (self.definitionStatusLabel, self._set_labeled_text),
             "best_guess_status": (self.bestGuessStatusLabel, self._set_labeled_text),
             "error_output": (self.errorOutputView, self._set_error_text),
-            # No entry for test cases, handled separately
         }
 
     def _buildUI(self):
-        # UI building logic remains the same (declarative)
         default_font = QFont("Monospace", 16)
         default_font.setStyleHint(QFont.StyleHint.Monospace)
 
@@ -88,11 +86,17 @@ class EditorWindowUI(QWidget):
         """Generic UI update slot."""
         if signal_name in self._widget_map:
             widget, setter = self._widget_map[signal_name]
-            setter(widget, data)  # Call the appropriate setter
+            setter(widget, data)
         elif signal_name == "test_cases":
-            self._set_test_cases(data)  # data will now be a tuple
+            self._set_test_cases(data)
+        elif signal_name == "test_status":
+            test_num, status = data
+            self.testStatusLabels[test_num].setText(status)
+        elif signal_name == "debug":
+            debug(f"{signal_name=}")
+            debug(f"{data=}")
         else:
-            print(f"Warning: Unhandled signal '{signal_name}'")
+            warn(f"Warning: Unhandled signal '{signal_name}'")
 
     def _set_labeled_text(self, label: QLabel, data: tuple[str, str]):
         """Helper to set text and color on a label."""

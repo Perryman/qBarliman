@@ -28,7 +28,7 @@ class ProcessManager(QObject):
             lambda exitCode, exitStatus: self.processFinished.emit(exitCode)
         )
         self.process.errorOccurred.connect(
-            lambda error: self.processError.emit(str(error))
+            lambda error: self.processError.emit(str(f"{error=}"))
         )
 
     def kill_process(self):

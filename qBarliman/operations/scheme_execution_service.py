@@ -68,15 +68,15 @@ class SchemeExecutionService(QObject):
         # Simplified and unified output rules.
         self._output_rules = {
             "parse-error-in-defn": (TaskStatus.PARSE_ERROR, "Parse error"),
-            "illegal-sexp-in-defn": (TaskStatus.SYNTAX_ERROR, "Illegal sexpression"),
+            "illegal-sexp-in-defn": (TaskStatus.SYNTAX_ERROR, "Illegal s-expression"),
             "()": (TaskStatus.EVALUATION_FAILED, "Evaluation Failed"),
             "illegal-sexp-in-test/answer": (
                 TaskStatus.SYNTAX_ERROR,
-                "Illegal sexpression",
+                "Illegal s-expression",
             ),
             "parse-error-in-test/answer": (
                 TaskStatus.SYNTAX_ERROR,
-                "Illegal sexpression",
+                "Illegal s-expression",
             ),
             "fail": (TaskStatus.FAILED, "Failed"),
             "__default_success__": (
@@ -92,7 +92,7 @@ class SchemeExecutionService(QObject):
 
     def execute_scheme(self, script_path: str, task_type: str):
         """Execute a Scheme script."""
-
+        debug(f"Execute scheme: {script_path=}")
         if not os.path.exists(script_path):
             self.processError.emit(task_type, "Script file not found.")
             return
@@ -108,6 +108,7 @@ class SchemeExecutionService(QObject):
         self.process_manager.run_process(command, arguments)
 
     def kill_process(self):
+        debug(f"Kill process: {self._task_type=}")
         self.process_manager.kill_process()
 
     @Slot(str, str, str)
@@ -116,14 +117,13 @@ class SchemeExecutionService(QObject):
         result = self._process_output(stdout, task_type)
         result.elapsed_time = elapsed_time
 
-        # Now instead of emitting more signals, we could have a slot in the controller
-        # that connects to processFinished and there we can call _handle_output to process the
-        # output of the execution.
-
     @Slot(str, int)
     def _handle_finish(self, task_type: str, exit_code: int):
         # Process the output to generate a TaskResult if you need to consolidate the results
-        pass
+        # and then emit a signal with the TaskResult object.
+        debug(f"Handle finish: {task_type=} {exit_code=}")
+        result = self._process_output(self.execution_service.stdout, task_type)
+        self.processFinished.emit(task_type, result.status)
 
     def _process_output(self, output: str, task_type: str) -> TaskResult:
         """Processes the output string using a unified rule set."""
@@ -155,4 +155,5 @@ class SchemeExecutionService(QObject):
 
         # Global default
         status, message = self._output_rules["__default__"]
+        debug(f"_process_output: {task_type=} {output=} {status=} {message=}")
         return TaskResult(status, message, output)
