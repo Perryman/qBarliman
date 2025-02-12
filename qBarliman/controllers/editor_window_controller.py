@@ -1,6 +1,6 @@
 import os
 
-from PySide6.QtCore import QObject, Slot, QTimer
+from PySide6.QtCore import QObject, QTimer, Slot
 from PySide6.QtWidgets import QMainWindow
 
 from qBarliman.constants import (
@@ -25,7 +25,8 @@ class EditorWindowController(QObject):
         super().__init__(parent)
 
         self.mainWindow = QMainWindow()
-        self.view = EditorWindowUI()
+        # self.mainWindow.setWindowTitle("qBarliman")
+        self.view = EditorWindowUI(self.mainWindow)
         self.mainWindow.setCentralWidget(self.view)
 
         self.interpreter_code = load_interpreter_code()

@@ -10,14 +10,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from qBarliman.constants import debug, warn
 from qBarliman.widgets.scheme_editor_text_view import SchemeEditorTextView
-from qBarliman.constants import warn, debug
+
 
 class EditorWindowUI(QWidget):
     """Main editor window UI component (declarative and reactive)."""
 
-    def __init__(self, parent=None):
+    def __init__(self, main_window, parent=None):
         super().__init__(parent)
+        main_window.setWindowTitle("qBarliman")
+        self.setMinimumWidth(800)
+        self.setMinimumHeight(600)
         self._buildUI()
         self._widget_map = {  # Key: signal name, Value: (widget, setter_method)
             "definition_text": (
@@ -34,6 +38,8 @@ class EditorWindowUI(QWidget):
         default_font = QFont("Monospace", 16)
         default_font.setStyleHint(QFont.StyleHint.Monospace)
 
+        self.setMinimumWidth(800)
+        self.setMinimumHeight(600)
         self.mainLayout = QVBoxLayout(self)
 
         self.schemeDefinitionView = SchemeEditorTextView(self)
