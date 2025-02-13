@@ -13,11 +13,13 @@ from qBarliman.templates import (
 )
 from qBarliman.constants import LOAD_MK_VICARE_SCM, LOAD_MK_SCM, debug
 from qBarliman.utils.rainbowp import rainbowp
+from qBarliman.utils.load_interpreter import load_interpreter_code
 
 
 class QueryBuilder:
-    def __init__(self, interpreter_code):
-        self.interpreter_code = interpreter_code
+
+    def __init__(self):
+        self.interpreter_code = load_interpreter_code()
 
     def build_simple_query(self, scheme_document: SchemeDocumentData) -> str:
         """Build query for simple evaluation."""

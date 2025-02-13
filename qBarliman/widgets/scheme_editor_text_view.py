@@ -21,7 +21,7 @@ class SchemeEditorTextView(QTextEdit):
 
         # Set up standard format
         format = QTextCharFormat()
-        format.setFontFamily("Monaco")
+        format.setFontFamily("Monospace")
         format.setFontPointSize(14)
         self.setCurrentCharFormat(format)
 
