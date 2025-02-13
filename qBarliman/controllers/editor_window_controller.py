@@ -94,16 +94,13 @@ class EditorWindowController(QObject):
 
     def _get_test_status_update(self, result):
         try:
-            index = int(
-                self._current_task_type[4:]
-            ) - 1  # Extract index and ensure it's 0-indexed
-            if 0 <= index < len(self.view.testStatusLabels):
-                return (  # Return only index, message and color
-                    index,
-                    result.message,
-                    self._get_status_color(result.status.name),
-                )
-        except (ValueError, TypeError, AttributeError):
+            index = int(self._current_task_type[4:]) - 1  # Extract index
+            return (
+                index,
+                result.message,
+                self._get_status_color(result.status.name),
+            )
+        except (ValueError, TypeError, AttributeError, IndexError):
             return None
 
     def update_model(self, updater):
@@ -139,7 +136,7 @@ class EditorWindowController(QObject):
                     and new_data.test_expected[i] != old_data.test_expected[i]
                 ):
                     self._schedule_run_code(task_type=f"test{i + 1}")
-                    break  # Only run one test at a time
+                    return  # Only run one test at a time, then stop checking
 
     def _schedule_run_code(self, task_type=None):
         """Schedules run_code to be called after a debounce interval."""
@@ -234,6 +231,7 @@ class EditorWindowController(QObject):
         self.execution_service.processError.connect(
             lambda task_type, error: self.view.update_ui("error_output", error)
         )  # We just update the UI, since we don't need to do anything else.
+        # self.execution_service.processFinished.connect(self._handle_process_finished)
 
     @Slot(str, str, str)
     def _handle_process_output(self, task_type: str, stdout: str, stderr: str):
@@ -254,14 +252,19 @@ class EditorWindowController(QObject):
             task_type, self._output_handlers["__default__"]
         )
         # Special handling for test cases, in order to update test UI properly
-        if task_type.startswith("test") and handlers == self._output_handlers["__default__"]:
-                handlers = self._output_handlers.get("test")
+        if (
+            task_type.startswith("test")
+            and handlers == self._output_handlers["__default__"]
+        ):
+            handlers = self._output_handlers.get("test")
 
         for signal_name, handler_func in handlers:
             update_data = handler_func(result)
             if update_data is not None:
                 if signal_name == "test_status":
                     index, message, color = update_data
-                    self.view.update_ui(signal_name, (index, message, color))
+                    self.view.update_ui(
+                        signal_name, (index, message, color)
+                    )  # Pass all three values
                 else:
                     self.view.update_ui(signal_name, update_data)

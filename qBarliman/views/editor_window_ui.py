@@ -96,8 +96,10 @@ class EditorWindowUI(QWidget):
         elif signal_name == "test_cases":
             self._set_test_cases(data)
         elif signal_name == "test_status":
+            # test_num, status, color = data #Unpack all values
+            # self._set_test_status(test_num, status, color) #Use the new method
             index, message, color = data
-            self._set_test_status(index, message, color) #Use the new method
+            self._set_test_status(index, message, color)
         elif signal_name == "debug":
             debug(f"{signal_name=}")
             debug(f"{data=}")
