@@ -8,9 +8,11 @@ class ProcessManager(QObject):
 
     def __init__(self):
         super().__init__()
-        self.process = QProcess()
+        self.process = None  # Initialize to None
 
     def run_process(self, command, arguments):
+        # Create a NEW QProcess instance each time.
+        self.process = QProcess()
         self.process.start(command, arguments)
 
         # Connect *directly* to anonymous functions (lambdas)
@@ -30,7 +32,4 @@ class ProcessManager(QObject):
         self.process.errorOccurred.connect(
             lambda error: self.processError.emit(str(f"{error=}"))
         )
-
-    def kill_process(self):
-        if self.process.state() != QProcess.NotRunning:
-            self.process.kill()
+        return self.process.processId()

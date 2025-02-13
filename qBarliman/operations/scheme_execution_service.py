@@ -40,24 +40,24 @@ class SchemeExecutionService(QObject):
         self.process_manager = ProcessManager()
         self._task_type = ""
         self.start_time = 0
+        self._current_process_id = None
 
         self.process_manager.processOutput.connect(self._handle_output)
         self.process_manager.processFinished.connect(self._handle_finished)
         self.process_manager.processError.connect(self._handle_error)
 
-
     def execute_scheme(self, script_path: str, task_type: str):
         """Execute a Scheme script."""
         debug(f"Execute scheme: {script_path=}")
         if not os.path.exists(script_path):
-            result = TaskResult(
-                task_type, TaskStatus.FAILED, "Script file not found."
-            )
+            result = TaskResult(task_type, TaskStatus.FAILED, "Script file not found.")
             self.taskResultReady.emit(result)
             return None
 
         if not SCHEME_EXECUTABLE:
-            result = TaskResult(task_type, TaskStatus.FAILED, "SCHEME_EXECUTABLE not set.")
+            result = TaskResult(
+                task_type, TaskStatus.FAILED, "SCHEME_EXECUTABLE not set."
+            )
             self.taskResultReady.emit(result)
             return None
 
@@ -66,20 +66,21 @@ class SchemeExecutionService(QObject):
         self.processStarted.emit(task_type)
         command = SCHEME_EXECUTABLE
         arguments = ["--script", script_path]
-        self.process_manager.run_process(command, arguments)
-        return self.process_manager.process.processId()
+        pid = self.process_manager.run_process(command, arguments)  # Get the PID
+        self._current_process_id = pid  # Store the PID
+        return pid  # Return PID
 
     def kill_process(self, pid=None):
         debug(f"Kill process, pid={pid}")
         if pid is not None:
             try:
-                os.kill(pid, 15) #SIGTERM
+                os.kill(pid, 15)  # SIGTERM
+                self._current_process_id = None  # Clear the ID
             except ProcessLookupError:
                 warn(f"Process with PID {pid} not found.")
-            except OSError as e: #more general, catch permission errors etc
+            except OSError as e:  # more general, catch permission errors etc
                 warn(f"Error killing process {pid}: {e}")
-        else:
-            self.process_manager.kill_process()
+        # No else case
 
     def _handle_output(self, stdout: str, stderr: str):
         pass  # All processing in _handle_finished
@@ -87,7 +88,6 @@ class SchemeExecutionService(QObject):
     def _handle_error(self, error: str):
         result = TaskResult(self._task_type, TaskStatus.FAILED, error)
         self.taskResultReady.emit(result)
-
 
     def _handle_finished(self, exit_code: int):
         elapsed_time = time.monotonic() - self.start_time
@@ -98,8 +98,11 @@ class SchemeExecutionService(QObject):
         result.elapsed_time = elapsed_time
         result.output = stderr if stderr else result.output
         self.taskResultReady.emit(result)
+        self._current_process_id = None  # Clear after finish
 
-    def _process_output(self, output: str, task_type: str, exit_code: int = 0) -> TaskResult:
+    def _process_output(
+        self, output: str, task_type: str, exit_code: int = 0
+    ) -> TaskResult:
         """Processes output, determines status, *and* sets the color."""
         output = output.strip()
 
@@ -129,4 +132,4 @@ class SchemeExecutionService(QObject):
             status = TaskStatus.SUCCESS
             message = "Success"
 
-        return TaskResult(task_type, status, message, output) # No more color here
+        return TaskResult(task_type, status, message, output)

@@ -52,14 +52,8 @@ class EditorWindowController(QObject):
         self._current_task_type = None
         self._all_tests_task_id = None
 
-        # Set up signals and UI
-        self.setup_connections()
-        self.mainWindow.show()
-        self.initialize_ui()
-        self.run_code("simple")  # Initial run
-
         # Declarative UI update mappings: TaskResult -> UI Action
-        self._ui_actions = {
+        self._ui_actions = {  # Moved BEFORE run_code
             ("simple", TaskStatus.SUCCESS): lambda r: (
                 self.view.update_ui("definition_status", (r.message, r.status)),
             ),
@@ -73,37 +67,69 @@ class EditorWindowController(QObject):
             ),
             ("simple", TaskStatus.EVALUATION_FAILED): lambda r: (
                 self.view.update_ui("definition_status", (r.message, r.status)),
-                 self.maybe_kill_alltests()
+                self.maybe_kill_alltests(),
             ),
             ("simple", TaskStatus.FAILED): lambda r: (
                 self.view.update_ui("definition_status", (r.message, r.status)),
-                self.maybe_kill_alltests()
+                self.maybe_kill_alltests(),
             ),
             ("allTests", TaskStatus.SUCCESS): lambda r: (
                 self.view.update_ui("best_guess", r.output),
-                self.view.update_ui("best_guess_status", (f"Succeeded ({r.elapsed_time:.2f} s)", r.status)),
+                self.view.update_ui(
+                    "best_guess_status",
+                    (f"Succeeded ({r.elapsed_time:.2f} s)", r.status),
+                ),
             ),
             ("allTests", TaskStatus.FAILED): lambda r: (
                 self.view.update_ui("best_guess", ""),
-                self.view.update_ui("best_guess_status", (f"Failed ({r.elapsed_time:.2f} s)", r.status)),
+                self.view.update_ui(
+                    "best_guess_status", (f"Failed ({r.elapsed_time:.2f} s)", r.status)
+                ),
             ),
-             ("allTests", TaskStatus.SYNTAX_ERROR): lambda r:(
-                self.view.update_ui("best_guess_status", (f"Failed ({r.elapsed_time:.2f} s)", r.status)),
+            ("allTests", TaskStatus.SYNTAX_ERROR): lambda r: (
+                self.view.update_ui(
+                    "best_guess_status", (f"Failed ({r.elapsed_time:.2f} s)", r.status)
+                ),
             ),
-
             # Use a generic "test" prefix for individual tests
             ("test", TaskStatus.SUCCESS): lambda r: (
-                self.view.update_ui("test_status", (int(r.task_type[4:]) - 1, f"Succeeded ({r.elapsed_time:.2f} s)", r.status)),
+                self.view.update_ui(
+                    "test_status",
+                    (
+                        int(r.task_type[4:]) - 1,
+                        f"Succeeded ({r.elapsed_time:.2f} s)",
+                        r.status,
+                    ),
+                ),
             ),
             ("test", TaskStatus.FAILED): lambda r: (
-                self.view.update_ui("test_status", (int(r.task_type[4:]) - 1, f"Failed ({r.elapsed_time:.2f} s)", r.status)),
+                self.view.update_ui(
+                    "test_status",
+                    (
+                        int(r.task_type[4:]) - 1,
+                        (
+                            f"Failed ({r.elapsed_time:.2f} s)"
+                            if r.elapsed_time is not None
+                            else "Failed"
+                        ),
+                        r.status,
+                    ),
+                ),
                 self.maybe_kill_alltests(),
             ),
-             ("test", TaskStatus.SYNTAX_ERROR): lambda r: (
-                 self.view.update_ui("test_status", (int(r.task_type[4:]) - 1, r.message, r.status)),
+            ("test", TaskStatus.SYNTAX_ERROR): lambda r: (
+                self.view.update_ui(
+                    "test_status", (int(r.task_type[4:]) - 1, r.message, r.status)
+                ),
                 self.maybe_kill_alltests(),
             ),
         }
+
+        # Set up signals and UI
+        self.setup_connections()
+        self.mainWindow.show()
+        self.initialize_ui()
+        self.run_code("simple")  # Initial run
 
     def maybe_kill_alltests(self):
         """Helper function to avoid repetition"""
@@ -118,18 +144,19 @@ class EditorWindowController(QObject):
         self.view.reset_test_ui()
 
     def update_model(self, updater):
-        """Applies an updater function and runs necessary tests."""
+        """Applies an updater function DIRECTLY TO THE MODEL."""
+        # NO MORE SchemeDocumentData copy here!
 
-        new_data: SchemeDocumentData = updater(self.model._data)
-        if not isinstance(new_data, SchemeDocumentData):
-            raise TypeError(
-                "updater function must return a SchemeDocumentData instance"
-            )
+        # Get the old data for comparison *before* updating.
+        old_data = self.model._data
 
-        old_data = self.model._data  # Store *before* update
-        self.model._data = new_data  # Update the model
+        updater(self.model)  # Call the updater directly on the model.
 
-        # Determine which tasks to schedule.
+        # Get the new data *after* the update.
+        new_data = self.model._data
+
+        # Now, check for changes and schedule tasks.  This logic is
+        # *essential* for triggering re-runs.
         if new_data.definition_text != old_data.definition_text:
             self._schedule_run_code("simple")
 
@@ -137,26 +164,22 @@ class EditorWindowController(QObject):
             new_data.test_inputs != old_data.test_inputs
             or new_data.test_expected != old_data.test_expected
         ):
-            self.model.testCasesChanged.emit(
-                new_data.test_inputs, new_data.test_expected
-            )
-            # Schedule allTests if any test inputs/expected are non-empty.
             if any(new_data.test_inputs) or any(new_data.test_expected):
                 self._schedule_run_code("allTests")
 
-        # Schedule individual tests *only* if input/expected changed AND non-empty.
-        for i in range(len(new_data.test_inputs)):
-            if (
-                i < len(old_data.test_inputs)
-                and new_data.test_inputs[i] != old_data.test_inputs[i]
-            ) or (
-                i < len(old_data.test_expected)
-                and new_data.test_expected[i] != old_data.test_expected[i]
-            ):
+            # Schedule individual tests *only* if input/expected changed AND non-empty.
+            for i in range(len(new_data.test_inputs)):
                 if (
-                    new_data.test_inputs[i] and new_data.test_expected[i]
-                ):  # BOTH must be non-empty
-                    self._schedule_run_code(f"test{i + 1}")
+                    i < len(old_data.test_inputs)
+                    and new_data.test_inputs[i] != old_data.test_inputs[i]
+                ) or (
+                    i < len(old_data.test_expected)
+                    and new_data.test_expected[i] != old_data.test_expected[i]
+                ):
+                    if (
+                        new_data.test_inputs[i] and new_data.test_expected[i]
+                    ):  # BOTH must be non-empty
+                        self._schedule_run_code(f"test{i + 1}")
 
     def _schedule_run_code(self, task_type):
         """Schedules a task, avoiding duplicates."""
@@ -201,12 +224,17 @@ class EditorWindowController(QObject):
         # No else needed.  If !script, it's handled by error callbacks.
 
     def setup_connections(self):
-        # Model to View
+        # Model to View - NOW CORRECT
+        self.model.definitionTextChanged.connect(
+            lambda text: self.view.update_ui("definition_text", text)
+        )
         self.model.testCasesChanged.connect(
-            lambda inputs, expected: self.view.update_ui("test_cases", (inputs, expected))
+            lambda inputs, expected: self.view.update_ui(
+                "test_cases", (inputs, expected)
+            )
         )
 
-        # View to Controller (Model Updates)
+        # View to Controller (Model Updates) - CORRECT.  Lambdas call update_model.
         self.view.schemeDefinitionView.textChanged.connect(
             lambda: self.update_model(
                 lambda m: m.update_definition_text(
@@ -217,13 +245,13 @@ class EditorWindowController(QObject):
         for i, input_field in enumerate(self.view.testInputs):
             input_field.textChanged.connect(
                 lambda text, idx=i: self.update_model(
-                    lambda m: m.update_test_input(idx, text)
+                    lambda m: m.update_test_input(idx + 1, text)  # Corrected index
                 )
             )
         for i, output_field in enumerate(self.view.testExpectedOutputs):
             output_field.textChanged.connect(
                 lambda text, idx=i: self.update_model(
-                    lambda m: m.update_test_expected(idx, text)
+                    lambda m: m.update_test_expected(idx + 1, text)  # Corrected index
                 )
             )
 
@@ -233,15 +261,13 @@ class EditorWindowController(QObject):
 
     @Slot(str)
     def _handle_process_started(self, task_type):
-        status = TaskStatus.THINKING
         if task_type == "simple":
-            self.view.update_ui("definition_status", ("???", status))
+            self.view.update_ui("definition_status", ("???", TaskStatus.THINKING))
         elif task_type == "allTests":
-            self.view.update_ui("best_guess_status", ("???", status))
+            self.view.update_ui("best_guess_status", ("???", TaskStatus.THINKING))
         elif task_type.startswith("test"):
             index = int(task_type[4:]) - 1
-            self.view.update_ui("test_status", (index, "???", status))
-
+            self.view.update_ui("test_status", (index, "???", TaskStatus.THINKING))
 
     @Slot(TaskResult)
     def _handle_task_result(self, result: TaskResult):
