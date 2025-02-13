@@ -41,6 +41,13 @@ class EditorWindowController(QObject):
             test_expected=DEFAULT_TEST_EXPECTED_OUTPUTS.copy(),
         )
 
+        # Debounce timer for running code on model updates.
+        self.run_code_timer = QTimer()
+        self.run_code_timer.setSingleShot(True)
+        self.run_code_timer.timeout.connect(self._run_code_debounce)
+        self._debounce_interval = 0.5  # seconds
+        self._pending_task_type = None  # Initialize *before* connections.
+        self._current_task_type = None
         # Set up signals and UI connections
         self.setup_connections()
         self.mainWindow.show()
@@ -60,14 +67,6 @@ class EditorWindowController(QObject):
             ],
             "__default__": [],  # Default: do nothing
         }
-
-        # Debounce timer for running code on model updates.
-        self.run_code_timer = QTimer()
-        self.run_code_timer.setSingleShot(True)
-        self.run_code_timer.timeout.connect(self._run_code_debounce)
-        self._debounce_interval = 0.5  # seconds
-        self._pending_task_type = None
-        self._current_task_type = None
 
     def _make_status_handler(self):
         """
@@ -118,6 +117,15 @@ class EditorWindowController(QObject):
         old_data = self.model._data  # Store *before* update
         self.model._data = new_data  # Update the model
 
+        # Determine the task type based on *what* changed.
+        task_type = None
+        if new_data.definition_text != old_data.definition_text:
+            # If definition text changed, run simple or allTests (based on whether tests exist)
+            if any(self.model.test_inputs) or any(self.model.test_expected):
+                task_type = "allTests"
+            else:
+                task_type = "simple"
+
         if (
             new_data.test_inputs != old_data.test_inputs
             or new_data.test_expected != old_data.test_expected
@@ -125,27 +133,17 @@ class EditorWindowController(QObject):
             self.model.testCasesChanged.emit(
                 new_data.test_inputs, new_data.test_expected
             )
-            # Find *which* test changed, and run *only* that test.
-            for i in range(len(new_data.test_inputs)):
-                if (
-                    i < len(old_data.test_inputs)
-                    and new_data.test_inputs[i] != old_data.test_inputs[i]
-                ) or (
-                    i < len(old_data.test_expected)
-                    and new_data.test_expected[i] != old_data.test_expected[i]
-                ):
-                    self._schedule_run_code(task_type=f"test{i + 1}")
-                    break
+            # If *any* test input/expected changed, run allTests.
+            task_type = "allTests"
+
+        # Schedule the run, even if task_type is None (it'll be handled).
+        self._schedule_run_code(task_type)
 
     def _schedule_run_code(self, task_type=None):
         """Schedules run_code to be called after a debounce interval."""
-        # If no task_type is specified, determine based on model.
-        if task_type is None:
-            if any(self.model.test_inputs) or any(self.model.test_expected):
-                task_type = "allTests"
-            else:
-                task_type = "simple"
-        self._pending_task_type = task_type
+        # Store the *most relevant* task type.  Prioritize "allTests".
+        if task_type == "allTests" or self._pending_task_type != "allTests":
+             self._pending_task_type = task_type
         self.run_code_timer.start(int(self._debounce_interval * 1000))  # Convert to ms
 
     @Slot()
@@ -158,21 +156,24 @@ class EditorWindowController(QObject):
         """Runs the Scheme code based on the current model."""
         # Clear error output at the start of each run
         self.view.update_ui("error_output", "")
-
+        script = "" # Initialize script here
         if self.model.validate():
-            # Determine which query to run
-            if task_type is None:  # If not already determined
+            # Determine which query to run, handling None correctly.
+            if task_type is None:
                 if any(self.model.test_inputs) or any(self.model.test_expected):
                     task_type = "allTests"
-                    script = self.query_builder.build_all_tests_query(self.model._data)
                 else:
                     task_type = "simple"
-                    script = self.query_builder.build_simple_query(self.model._data)
             elif task_type.startswith("test"):
+                # This part is now ONLY for direct calls, not debounced ones.
                 script = self.query_builder.build_test_query(
                     self.model._data, int(task_type[4:])
                 )
-            else:  # Added error handling for invalid task_type
+            elif task_type == "allTests":
+                script = self.query_builder.build_all_tests_query(self.model._data)
+            elif task_type == "simple":
+                script = self.query_builder.build_simple_query(self.model._data)
+            else:
                 warn(f"Invalid task type: {task_type}")
                 return
 
@@ -186,6 +187,7 @@ class EditorWindowController(QObject):
             self.execution_service.execute_scheme(script_path, task_type)
 
     def setup_connections(self):
+        # Model to View
         self.model.testCasesChanged.connect(
             lambda inputs, expected: self.view.update_ui(
                 "test_cases", (inputs, expected)
@@ -194,7 +196,6 @@ class EditorWindowController(QObject):
         self.model.statusChanged.connect(
             lambda status: self.view.update_ui("status", status)
         )
-
         # View to Controller (Model Updates)
         self.view.schemeDefinitionView.textChanged.connect(
             lambda: self.update_model(
