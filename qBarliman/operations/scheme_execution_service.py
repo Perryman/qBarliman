@@ -4,11 +4,9 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional
 
-from PySide6.QtCore import QObject, Qt, Signal, Slot
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QObject, Signal
 
-# trunk-ignore(ruff/F401)
-from qBarliman.constants import SCHEME_EXECUTABLE, debug, good, info, warn
+from qBarliman.constants import SCHEME_EXECUTABLE, debug, warn
 from qBarliman.operations.process_manager import ProcessManager
 
 
@@ -20,11 +18,11 @@ class TaskStatus(Enum):
     THINKING = auto()
     FAILED = auto()
     TERMINATED = auto()
-    # Add other status types as needed
 
 
 @dataclass
 class TaskResult:
+    task_type: str
     status: TaskStatus
     message: str
     output: str = ""
@@ -34,75 +32,34 @@ class TaskResult:
 class SchemeExecutionService(QObject):
     """Service for executing Scheme code."""
 
-    processOutput = Signal(str, str, str)  # task_type, stdout, stderr
-    processFinished = Signal(str, int)  # task_type, exit_code
-    processError = Signal(str, str)  # task_type, error_message
-    processStarted = Signal(str)  # task_type
+    taskResultReady = Signal(TaskResult)  # Single, unified signal
+    processStarted = Signal(str)
 
     def __init__(self, parent: QObject = None):
         super().__init__(parent)
         self.process_manager = ProcessManager()
         self._task_type = ""
-        self._stdout = ""  # Store stdout here!
         self.start_time = 0
-        self.colors = {
-            "default": QColor(Qt.GlobalColor.black),
-            "syntax_error": QColor(Qt.GlobalColor.darkYellow),
-            "parse_error": QColor(Qt.GlobalColor.yellow),
-            "failed": QColor(Qt.GlobalColor.red),
-            "success": QColor(Qt.GlobalColor.green),
-            "thinking": QColor(Qt.GlobalColor.magenta),
-        }
 
-        self.process_manager.processOutput.connect(
-            lambda stdout, stderr: self.processOutput.emit(
-                self._task_type, stdout, stderr
-            )
-        )
-        self.process_manager.processFinished.connect(
-            lambda exit_code: self.processFinished.emit(self._task_type, exit_code)
-        )
-        self.process_manager.processError.connect(
-            lambda error_msg: self.processError.emit(self._task_type, error_msg)
-        )
+        self.process_manager.processOutput.connect(self._handle_output)
+        self.process_manager.processFinished.connect(self._handle_finished)
+        self.process_manager.processError.connect(self._handle_error)
 
-        # Simplified and unified output rules.
-        self._output_rules = {
-            "parse-error-in-defn": (TaskStatus.PARSE_ERROR, "Parse error"),
-            "illegal-sexp-in-defn": (
-                TaskStatus.SYNTAX_ERROR,
-                "Illegal s-expression",
-            ),
-            "()": (TaskStatus.EVALUATION_FAILED, "Evaluation Failed"),
-            "illegal-sexp-in-test/answer": (
-                TaskStatus.SYNTAX_ERROR,
-                "Illegal s-expression",
-            ),
-            "parse-error-in-test/answer": (
-                TaskStatus.SYNTAX_ERROR,
-                "Illegal s-expression",
-            ),
-            "fail": (TaskStatus.FAILED, "Failed"),
-            "__default_success__": (
-                TaskStatus.SUCCESS,
-                "Success",
-            ),  # One default for success
-            "__thinking__": (TaskStatus.THINKING, "Thinking..."),
-            "__default__": (
-                TaskStatus.FAILED,
-                "Unknown task type",
-            ),  # And a fail default
-        }
 
     def execute_scheme(self, script_path: str, task_type: str):
         """Execute a Scheme script."""
         debug(f"Execute scheme: {script_path=}")
         if not os.path.exists(script_path):
-            self.processError.emit(task_type, "Script file not found.")
-            return
+            result = TaskResult(
+                task_type, TaskStatus.FAILED, "Script file not found."
+            )
+            self.taskResultReady.emit(result)
+            return None
+
         if not SCHEME_EXECUTABLE:
-            self.processError.emit(task_type, "SCHEME_EXECUTABLE not set.")
-            return
+            result = TaskResult(task_type, TaskStatus.FAILED, "SCHEME_EXECUTABLE not set.")
+            self.taskResultReady.emit(result)
+            return None
 
         self._task_type = task_type
         self.start_time = time.monotonic()
@@ -110,54 +67,66 @@ class SchemeExecutionService(QObject):
         command = SCHEME_EXECUTABLE
         arguments = ["--script", script_path]
         self.process_manager.run_process(command, arguments)
+        return self.process_manager.process.processId()
 
-    def kill_process(self):
-        debug(f"Kill process: {self._task_type=}")
-        self.process_manager.kill_process()
+    def kill_process(self, pid=None):
+        debug(f"Kill process, pid={pid}")
+        if pid is not None:
+            try:
+                os.kill(pid, 15) #SIGTERM
+            except ProcessLookupError:
+                warn(f"Process with PID {pid} not found.")
+            except OSError as e: #more general, catch permission errors etc
+                warn(f"Error killing process {pid}: {e}")
+        else:
+            self.process_manager.kill_process()
 
-    @Slot(str, str, str)
-    def _handle_output(self, task_type: str, stdout: str, stderr: str):
-        # Store stdout for later processing in _handle_finish
-        self._stdout = stdout
+    def _handle_output(self, stdout: str, stderr: str):
+        pass  # All processing in _handle_finished
 
-    @Slot(str, int)
-    def _handle_finish(self, task_type: str, exit_code: int):
+    def _handle_error(self, error: str):
+        result = TaskResult(self._task_type, TaskStatus.FAILED, error)
+        self.taskResultReady.emit(result)
+
+
+    def _handle_finished(self, exit_code: int):
         elapsed_time = time.monotonic() - self.start_time
-        result = self._process_output(self._stdout, task_type, exit_code)
+        stdout = self.process_manager.process.readAllStandardOutput().data().decode()
+        stderr = self.process_manager.process.readAllStandardError().data().decode()
+
+        result = self._process_output(stdout, self._task_type, exit_code)
         result.elapsed_time = elapsed_time
-        debug(f"process finished {result=}")
-        # Don't emit a signal.  The controller gets the result directly.
-        # The controller will use _handle_output to handle this result.
-        self._handle_output(task_type, result.output, result.message if result.status == TaskStatus.FAILED else "")
+        result.output = stderr if stderr else result.output
+        self.taskResultReady.emit(result)
 
     def _process_output(self, output: str, task_type: str, exit_code: int = 0) -> TaskResult:
-        """Processes the output string using a unified rule set."""
+        """Processes output, determines status, *and* sets the color."""
         output = output.strip()
 
-        # Check for thinking status first
-        if (
-            output
-            in [
-                "illegal-sexp-in-defn",
-                "parse-error-in-defn",
-                "illegal-sexp-in-test/answer",
-                "parse-error-in-test/answer",
-            ]
-            and task_type != "simple"
-        ):  # "thinking" applies to all but "simple"
-            status, message = self._output_rules["__thinking__"]
-            return TaskResult(status, message, output)
+        if exit_code != 0:
+            status = TaskStatus.SYNTAX_ERROR
+            message = "Syntax Error"
+        elif output == "parse-error-in-defn":
+            status = TaskStatus.PARSE_ERROR
+            message = "Parse error"
+        elif output == "illegal-sexp-in-defn":
+            status = TaskStatus.SYNTAX_ERROR
+            message = "Illegal s-expression"
+        elif output == "()":
+            status = TaskStatus.EVALUATION_FAILED
+            message = "Evaluation Failed"
+        elif (
+            output == "illegal-sexp-in-test/answer"
+            or output == "parse-error-in-test/answer"
+        ):
+            status = TaskStatus.SYNTAX_ERROR
+            message = "Syntax Error in test"
 
-        # Direct matches
-        if output in self._output_rules:
-            status, message = self._output_rules[output]
-            return TaskResult(status, message, output)
-
-        # Determine success/failure based on exit_code AND task_type
-        if exit_code == 0:
-            #  if task_type in ("simple", "test", "allTests"): #This is too restrictive
-            status, message = self._output_rules["__default_success__"]
-            return TaskResult(status, message, output)
+        elif output == "fail":
+            status = TaskStatus.FAILED
+            message = "Failed"
         else:
-            status, message = self._output_rules["__default__"]
-            return TaskResult(status, message, output)
+            status = TaskStatus.SUCCESS
+            message = "Success"
+
+        return TaskResult(task_type, status, message, output) # No more color here

@@ -16,6 +16,8 @@ from qBarliman.models.scheme_document import SchemeDocument
 from qBarliman.models.scheme_document_data import SchemeDocumentData
 from qBarliman.operations.scheme_execution_service import (
     SchemeExecutionService,
+    TaskResult,
+    TaskStatus
 )
 from qBarliman.utils.query_builder import QueryBuilder
 from qBarliman.views.editor_window_ui import EditorWindowUI
@@ -34,76 +36,86 @@ class EditorWindowController(QObject):
 
         self.execution_service = SchemeExecutionService()
 
-        # Initialize model *before* connections, but *after* other setup.
+        # Initialize model
         self.model = SchemeDocument(
             definition_text="\n".join(DEFAULT_DEFINITIONS),
             test_inputs=DEFAULT_TEST_INPUTS.copy(),
             test_expected=DEFAULT_TEST_EXPECTED_OUTPUTS.copy(),
         )
 
-        # Debounce timer for running code on model updates.
+        # Debounce timer
         self.run_code_timer = QTimer()
         self.run_code_timer.setSingleShot(True)
         self.run_code_timer.timeout.connect(self._run_code_debounce)
         self._debounce_interval = 0.5  # seconds
-        self._pending_task_type = None  # Initialize *before* connections.
+        self._pending_task_types = []  # List of task types to run
         self._current_task_type = None
-        # Set up signals and UI connections
+        self._all_tests_task_id = None
+
+        # Set up signals and UI
         self.setup_connections()
         self.mainWindow.show()
         self.initialize_ui()
-        self.run_code()
-        # Define the output handling rules *declaratively*.
-        self._output_handlers = {
-            "simple": [
-                ("definition_status", self._make_status_handler()),
-            ],
-            "allTests": [
-                ("best_guess", lambda r: r.output),
-                ("best_guess_status", self._make_status_handler()),
-            ],
-            "test": [  # Prefix match for test-related messages
-                ("test_status", self._get_test_status_update),
-            ],
-            "__default__": [],  # Default: do nothing
+        self.run_code("simple")  # Initial run
+
+        # Declarative UI update mappings: TaskResult -> UI Action
+        self._ui_actions = {
+            ("simple", TaskStatus.SUCCESS): lambda r: (
+                self.view.update_ui("definition_status", (r.message, r.status)),
+            ),
+            ("simple", TaskStatus.SYNTAX_ERROR): lambda r: (
+                self.view.update_ui("definition_status", (r.message, r.status)),
+                self.maybe_kill_alltests(),
+            ),
+            ("simple", TaskStatus.PARSE_ERROR): lambda r: (
+                self.view.update_ui("definition_status", (r.message, r.status)),
+                self.maybe_kill_alltests(),
+            ),
+            ("simple", TaskStatus.EVALUATION_FAILED): lambda r: (
+                self.view.update_ui("definition_status", (r.message, r.status)),
+                 self.maybe_kill_alltests()
+            ),
+            ("simple", TaskStatus.FAILED): lambda r: (
+                self.view.update_ui("definition_status", (r.message, r.status)),
+                self.maybe_kill_alltests()
+            ),
+            ("allTests", TaskStatus.SUCCESS): lambda r: (
+                self.view.update_ui("best_guess", r.output),
+                self.view.update_ui("best_guess_status", (f"Succeeded ({r.elapsed_time:.2f} s)", r.status)),
+            ),
+            ("allTests", TaskStatus.FAILED): lambda r: (
+                self.view.update_ui("best_guess", ""),
+                self.view.update_ui("best_guess_status", (f"Failed ({r.elapsed_time:.2f} s)", r.status)),
+            ),
+             ("allTests", TaskStatus.SYNTAX_ERROR): lambda r:(
+                self.view.update_ui("best_guess_status", (f"Failed ({r.elapsed_time:.2f} s)", r.status)),
+            ),
+
+            # Use a generic "test" prefix for individual tests
+            ("test", TaskStatus.SUCCESS): lambda r: (
+                self.view.update_ui("test_status", (int(r.task_type[4:]) - 1, f"Succeeded ({r.elapsed_time:.2f} s)", r.status)),
+            ),
+            ("test", TaskStatus.FAILED): lambda r: (
+                self.view.update_ui("test_status", (int(r.task_type[4:]) - 1, f"Failed ({r.elapsed_time:.2f} s)", r.status)),
+                self.maybe_kill_alltests(),
+            ),
+             ("test", TaskStatus.SYNTAX_ERROR): lambda r: (
+                 self.view.update_ui("test_status", (int(r.task_type[4:]) - 1, r.message, r.status)),
+                self.maybe_kill_alltests(),
+            ),
         }
 
-    def _make_status_handler(self):
-        """
-        Returns a handler function that extracts the message
-        and computes the appropriate status color.
-        """
-        return lambda r: (
-            r.message,
-            self.view._get_status_color(r.status.name),
-        )
-
-    def _get_status_color(self, status_name: str) -> str:
-        """Get color name for a given status."""
-        return self.execution_service.colors.get(
-            status_name.lower(), self.execution_service.colors["default"]
-        ).name()
-
-    def _get_test_status_update(self, result):
-        try:
-            index = (
-                int(self._current_task_type[4:]) - 1
-            )  # Extract index and ensure it's 0-indexed
-            if 0 <= index < len(self.view.testStatusLabels):
-                return (  # Return index, message and color
-                    index,
-                    result.message,
-                    self._get_status_color(result.status.name),
-                )
-        except (ValueError, TypeError, AttributeError):
-            return None
+    def maybe_kill_alltests(self):
+        """Helper function to avoid repetition"""
+        if self._all_tests_task_id is not None:
+            self.execution_service.kill_process(self._all_tests_task_id)
+            self._all_tests_task_id = None
 
     def initialize_ui(self):
-        # Initial UI setup using update_ui for consistency.
+        # Initial UI setup, now uses update_ui
         self.view.update_ui("definition_text", self.model.definition_text)
-        self.view.update_ui(
-            "test_cases", (self.model.test_inputs, self.model.test_expected)
-        )
+        self.view.update_ui("test_cases", (self.model.test_inputs, self.model.test_expected))
+        self.view.reset_test_ui()
 
     def update_model(self, updater):
         """Applies an updater function and runs necessary tests."""
@@ -117,14 +129,9 @@ class EditorWindowController(QObject):
         old_data = self.model._data  # Store *before* update
         self.model._data = new_data  # Update the model
 
-        # Determine the task type based on *what* changed.
-        task_type = None
+        # Determine which tasks to schedule.
         if new_data.definition_text != old_data.definition_text:
-            # If definition text changed, run simple or allTests (based on whether tests exist)
-            if any(self.model.test_inputs) or any(self.model.test_expected):
-                task_type = "allTests"
-            else:
-                task_type = "simple"
+            self._schedule_run_code("simple")
 
         if (
             new_data.test_inputs != old_data.test_inputs
@@ -133,69 +140,72 @@ class EditorWindowController(QObject):
             self.model.testCasesChanged.emit(
                 new_data.test_inputs, new_data.test_expected
             )
-            # If *any* test input/expected changed, run allTests.
-            task_type = "allTests"
+            # Schedule allTests if any test inputs/expected are non-empty.
+            if any(new_data.test_inputs) or any(new_data.test_expected):
+                self._schedule_run_code("allTests")
 
-        # Schedule the run, even if task_type is None (it'll be handled).
-        self._schedule_run_code(task_type)
+        # Schedule individual tests *only* if input/expected changed AND non-empty.
+        for i in range(len(new_data.test_inputs)):
+            if (
+                i < len(old_data.test_inputs)
+                and new_data.test_inputs[i] != old_data.test_inputs[i]
+            ) or (
+                i < len(old_data.test_expected)
+                and new_data.test_expected[i] != old_data.test_expected[i]
+            ):
+                if (
+                    new_data.test_inputs[i] and new_data.test_expected[i]
+                ):  # BOTH must be non-empty
+                    self._schedule_run_code(f"test{i + 1}")
 
-    def _schedule_run_code(self, task_type=None):
-        """Schedules run_code to be called after a debounce interval."""
-        # Store the *most relevant* task type.  Prioritize "allTests".
-        if task_type == "allTests" or self._pending_task_type != "allTests":
-             self._pending_task_type = task_type
-        self.run_code_timer.start(int(self._debounce_interval * 1000))  # Convert to ms
+    def _schedule_run_code(self, task_type):
+        """Schedules a task, avoiding duplicates."""
+        if task_type not in self._pending_task_types:
+            self._pending_task_types.append(task_type)
+        self.run_code_timer.start(int(self._debounce_interval * 1000))
 
     @Slot()
     def _run_code_debounce(self):
-        """Executes run_code with the pending task type (if any)."""
-        self.run_code(self._pending_task_type)
-        self._pending_task_type = None
+        """Executes pending tasks."""
+        for task_type in self._pending_task_types:
+            self.run_code(task_type)
+        self._pending_task_types = []
 
-    def run_code(self, task_type=None):
-        """Runs the Scheme code based on the current model."""
-        # Clear error output at the start of each run
-        self.view.update_ui("error_output", "")
-        script = "" # Initialize script here
-        if self.model.validate():
-            # Determine which query to run, handling None correctly.
-            if task_type is None:
-                if any(self.model.test_inputs) or any(self.model.test_expected):
-                    task_type = "allTests"
-                else:
-                    task_type = "simple"
-            elif task_type.startswith("test"):
-                # This part is now ONLY for direct calls, not debounced ones.
-                script = self.query_builder.build_test_query(
-                    self.model._data, int(task_type[4:])
-                )
-            elif task_type == "allTests":
-                script = self.query_builder.build_all_tests_query(self.model._data)
-            elif task_type == "simple":
-                script = self.query_builder.build_simple_query(self.model._data)
-            else:
-                warn(f"Invalid task type: {task_type}")
-                return
+    def run_code(self, task_type):
+        """Runs the Scheme code for a given task type."""
+        self.view.clear_error_output()  # Clear errors
+        if task_type == "simple":
+            script = self.query_builder.build_simple_query(self.model._data)
+        elif task_type == "allTests":
+            script = self.query_builder.build_all_tests_query(self.model._data)
+            self._all_tests_task_id = None  # Reset before potentially setting.
+        elif task_type.startswith("test"):
+            index = int(task_type[4:]) - 1
+            script = self.query_builder.build_test_query(
+                self.model._data, index + 1
+            )  # Adjust for 1-based indexing
 
+        else:
+            warn(f"Invalid task type: {task_type}")
+            return
+
+        if script:
             self._current_task_type = task_type
-
-            # Create temporary file
             script_path = os.path.join(TMP_DIR, f"{task_type}.scm")
             with open(script_path, "w") as f:
                 f.write(script)
+            task_id = self.execution_service.execute_scheme(script_path, task_type)
+            if task_type == "allTests":
+                self._all_tests_task_id = task_id  # Store task ID
 
-            self.execution_service.execute_scheme(script_path, task_type)
+        # No else needed.  If !script, it's handled by error callbacks.
 
     def setup_connections(self):
         # Model to View
         self.model.testCasesChanged.connect(
-            lambda inputs, expected: self.view.update_ui(
-                "test_cases", (inputs, expected)
-            )
+            lambda inputs, expected: self.view.update_ui("test_cases", (inputs, expected))
         )
-        self.model.statusChanged.connect(
-            lambda status: self.view.update_ui("status", status)
-        )
+
         # View to Controller (Model Updates)
         self.view.schemeDefinitionView.textChanged.connect(
             lambda: self.update_model(
@@ -217,47 +227,36 @@ class EditorWindowController(QObject):
                 )
             )
 
-        # Execution Service Signals
-        self.execution_service.processStarted.connect(
-            lambda task_type: info(f"Process started: {task_type}")
-        )
-        self.execution_service.processOutput.connect(
-            self._handle_process_output
-        )  # Handle output AND errors
-        self.execution_service.processError.connect(
-            lambda task_type, error: self.view.update_ui("error_output", error)
-        )
+        # Connect to the *unified* taskResultReady signal.
+        self.execution_service.taskResultReady.connect(self._handle_task_result)
+        self.execution_service.processStarted.connect(self._handle_process_started)
 
-    @Slot(str, str, str)
-    def _handle_process_output(self, task_type: str, stdout: str, stderr: str):
-        """Handles process output, including errors, using a declarative approach."""
-        debug(f"Process output: {task_type=}, {stdout=}, {stderr=}")
+    @Slot(str)
+    def _handle_process_started(self, task_type):
+        status = TaskStatus.THINKING
+        if task_type == "simple":
+            self.view.update_ui("definition_status", ("???", status))
+        elif task_type == "allTests":
+            self.view.update_ui("best_guess_status", ("???", status))
+        elif task_type.startswith("test"):
+            index = int(task_type[4:]) - 1
+            self.view.update_ui("test_status", (index, "???", status))
 
-        if stderr:
-            self.view.update_ui("error_output", stderr)
-            return  # If we have an error, stop processing
 
-        result = self.execution_service._process_output(stdout, task_type)
-        info(f"{result=}")
-        self._current_task_type = (
-            task_type  # We store this to use it in _get_test_status_update
-        )
-        # Find and apply UI update handlers, same declarative logic as before.
-        handlers = self._output_handlers.get(
-            task_type, self._output_handlers["__default__"]
-        )
-        # Special handling for test cases, in order to update test UI properly
-        if (
-            task_type.startswith("test")
-            and handlers == self._output_handlers["__default__"]
-        ):
-            handlers = self._output_handlers.get("test")
+    @Slot(TaskResult)
+    def _handle_task_result(self, result: TaskResult):
+        """Handles the TaskResult and updates the UI."""
+        debug(f"Task result received: {result}")
 
-        for signal_name, handler_func in handlers:
-            update_data = handler_func(result)
-            if update_data is not None:
-                if signal_name == "test_status":
-                    index, message, color = update_data
-                    self.view.update_ui(signal_name, (index, message, color))
-                else:
-                    self.view.update_ui(signal_name, update_data)
+        # --- Get UI update action based on task type and status ---
+        # First, try to get a specific action for the (task_type, status)
+        action = self._ui_actions.get((result.task_type, result.status))
+
+        # If not found, try to get a generic action for "test" prefix
+        if action is None and result.task_type.startswith("test"):
+            action = self._ui_actions.get(("test", result.status))
+
+        # If still not found, do nothing
+        if action is not None:
+            action(result)  # Execute the UI update action
+        self.view.update_ui("error_output", result.output)  # Always set error output
