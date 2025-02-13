@@ -51,6 +51,7 @@ class EditorWindowController(QObject):
         # Then setup connections after model exists
         self.setup_connections()
         self.mainWindow.show()
+        self.initialize_ui()
         self.run_code()
         # Define the output handling rules *declaratively*.
         self._output_handlers = {
@@ -59,7 +60,7 @@ class EditorWindowController(QObject):
                     "definition_status",
                     lambda r: (
                         r.message,
-                        self._get_status_color(r.status.name),
+                        self.view._get_status_color(r.status.name),
                     ),
                 ),
             ],
@@ -69,7 +70,7 @@ class EditorWindowController(QObject):
                     "best_guess_status",
                     lambda r: (
                         r.message,
-                        self._get_status_color(r.status.name),
+                        self.view._get_status_color(r.status.name),
                     ),
                 ),
             ],
@@ -94,17 +95,30 @@ class EditorWindowController(QObject):
 
     def _get_test_status_update(self, result):
         try:
-            index = int(self._current_task_type[4:]) - 1  # Extract index
-            return (
-                index,
-                result.message,
-                self._get_status_color(result.status.name),
-            )
-        except (ValueError, TypeError, AttributeError, IndexError):
+            index = int(
+                self._current_task_type[4:]
+            ) - 1  # Extract index and ensure it's 0-indexed
+            if 0 <= index < len(self.view.testStatusLabels):
+                return (  # Return index, message and color
+                    index,
+                    result.message,
+                    self._get_status_color(result.status.name),
+                )
+        except (ValueError, TypeError, AttributeError):
             return None
+
+    def initialize_ui(self):
+        # Initial UI setup, now using update_ui for consistency
+        self.view.update_ui("definition_text", self.model.definition_text)
+        self.view.update_ui("test_cases", (self.model.test_inputs, self.model.test_expected))
+
 
     def update_model(self, updater):
         """Applies an updater function and runs necessary tests."""
+
+        # Block signals from the definition text view *during* model update.
+        self.view.schemeDefinitionView.blockSignals(True)
+
         new_data: SchemeDocumentData = updater(self.model._data)
         if not isinstance(new_data, SchemeDocumentData):
             raise TypeError(
@@ -136,7 +150,10 @@ class EditorWindowController(QObject):
                     and new_data.test_expected[i] != old_data.test_expected[i]
                 ):
                     self._schedule_run_code(task_type=f"test{i + 1}")
-                    return  # Only run one test at a time, then stop checking
+                    break  # Only run one test at a time, then stop checking
+        # Unblock signals *after* model update and signal emission.
+        self.view.schemeDefinitionView.blockSignals(False)
+
 
     def _schedule_run_code(self, task_type=None):
         """Schedules run_code to be called after a debounce interval."""
@@ -231,7 +248,6 @@ class EditorWindowController(QObject):
         self.execution_service.processError.connect(
             lambda task_type, error: self.view.update_ui("error_output", error)
         )  # We just update the UI, since we don't need to do anything else.
-        # self.execution_service.processFinished.connect(self._handle_process_finished)
 
     @Slot(str, str, str)
     def _handle_process_output(self, task_type: str, stdout: str, stderr: str):

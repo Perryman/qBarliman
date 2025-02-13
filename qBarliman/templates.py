@@ -79,7 +79,7 @@ SIMPLE_PARSE_ANS_T = Template(
 (g13 (gensym "g13")) (g14 (gensym "g14")) (g15 (gensym "g15")) 
 (g16 (gensym "g16")) (g17 (gensym "g17")) (g18 (gensym "g18")) 
 (g19 (gensym "g19")) (g20 (gensym "g20")))
- (fresh (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z _) (parseo `(begin $defns $body))))))
+ (fresh (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z  ) (parseo `(begin $defns $body))))))
 """
 )
 PARSE_ANS_T = Template(
@@ -92,7 +92,7 @@ PARSE_ANS_T = Template(
 (g13 (gensym "g13")) (g14 (gensym "g14")) (g15 (gensym "g15")) 
 (g16 (gensym "g16")) (g17 (gensym "g17")) (g18 (gensym "g18")) 
 (g19 (gensym "g19")) (g20 (gensym "g20")))
- (fresh (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z _) 
+ (fresh (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z  ) 
 (fresh (names dummy-expr) (extract-nameso `( $defns ) names) (parseo `((lambda ,names $body) ,dummy-expr)))))))
 """
 )

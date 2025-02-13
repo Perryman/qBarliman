@@ -11,7 +11,8 @@ from qBarliman.templates import (
     DEFINE_ANS_T,
     FULL_T,
 )
-from qBarliman.constants import LOAD_MK_VICARE_SCM, LOAD_MK_SCM
+from qBarliman.constants import LOAD_MK_VICARE_SCM, LOAD_MK_SCM, debug
+from qBarliman.utils.rainbowp import rainbowp
 
 
 class QueryBuilder:
@@ -38,8 +39,16 @@ class QueryBuilder:
         all_test_outputs = " ".join(
             [self._format_scheme_value(x) for x in scheme_document.test_expected]
         )
-
+        debug(f"All test inputs: {rainbowp(all_test_inputs)}")
+        debug(f"All test outputs: {rainbowp(all_test_outputs)}")
+        debug(f"All test definition text: {rainbowp(scheme_document.definition_text)}")
+        debug(
+            f"After substitution: {rainbowp(ALL_TEST_WRITE_T.substitute(definitionText=scheme_document.definition_text, allTestInputs=all_test_inputs, allTestOutputs=all_test_outputs))}"
+        )
         return ALL_TEST_WRITE_T.substitute(
+            load_mk_vicare=LOAD_MK_VICARE_SCM,
+            load_mk=LOAD_MK_SCM,
+            interp_string=self.interpreter_code,
             definitionText=scheme_document.definition_text,
             allTestInputs=all_test_inputs,
             allTestOutputs=all_test_outputs,
@@ -69,15 +78,10 @@ class QueryBuilder:
             raise ValueError(f"Invalid query type: {query_type}")
 
         # Common query building logic (using the templates correctly!)
-        eval_string = EVAL_T.substitute(
-            defns=scheme_document.definition_text, body=body, expectedOut=expected_out
-        )
+        eval_string = EVAL_T.substitute(defns=scheme_document.definition_text, body=body, expectedOut=expected_out)
         eval_string_fast = EVAL_FAST_T.substitute(eval_string=eval_string)
         eval_string_complete = EVAL_COMPLETE_T.substitute(eval_string=eval_string)
-        eval_string_both = EVAL_BOTH_T.substitute(
-            eval_string_fast=eval_string_fast,
-            eval_string_complete=eval_string_complete,
-        )
+        eval_string_both = EVAL_BOTH_T.substitute(eval_string_fast=eval_string_fast, eval_string_complete=eval_string_complete)
         define_ans_string = DEFINE_ANS_T.substitute(
             name=name, eval_string_both=eval_string_both
         )
@@ -94,10 +98,11 @@ class QueryBuilder:
                 interp_string=self.interpreter_code,
                 query_simple=full_query,  # Correct substitution!
             )
-        return full_query  # For "test" queries, return the full query
+        # For "test" queries, also need to load miniKanren *before* the generated code
+        return f"{LOAD_MK_VICARE_SCM}\n{LOAD_MK_SCM}\n{self.interpreter_code}\n{full_query}"
 
     def _format_scheme_value(self, value: str) -> str:
         """Formats a Python string for use in Scheme code."""
         if not value.strip():  # Check for empty or whitespace-only strings
-            return "()"  # Return '() for empty inputs
-        return f"{value}"
+            return "'()"  # Return '() for empty inputs
+        return f"{value}"  # User input will pass as is

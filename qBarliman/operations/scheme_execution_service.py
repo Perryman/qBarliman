@@ -35,7 +35,7 @@ class SchemeExecutionService(QObject):
     """Service for executing Scheme code."""
 
     processOutput = Signal(str, str, str)  # task_type, stdout, stderr
-    processFinished = Signal(str, int)  # task_type, exit_code  <-- Still emits exit code
+    processFinished = Signal(str, int)  # task_type, exit_code
     processError = Signal(str, str)  # task_type, error_message
     processStarted = Signal(str)  # task_type
 
@@ -122,7 +122,6 @@ class SchemeExecutionService(QObject):
 
     @Slot(str, int)
     def _handle_finish(self, task_type: str, exit_code: int):
-        """Processes the output and creates the TaskResult."""
         elapsed_time = time.monotonic() - self.start_time
         result = self._process_output(self._stdout, task_type, exit_code)
         result.elapsed_time = elapsed_time
@@ -156,10 +155,9 @@ class SchemeExecutionService(QObject):
 
         # Determine success/failure based on exit_code AND task_type
         if exit_code == 0:
-            if task_type in ("simple", "test", "allTests"):
-                status, message = self._output_rules["__default_success__"]
-                return TaskResult(status, message, output)
-
-        # If exit_code is not 0, or task_type is unknown, it's a failure
-        status, message = self._output_rules["__default__"]
-        return TaskResult(status, message, output)
+            #  if task_type in ("simple", "test", "allTests"): #This is too restrictive
+            status, message = self._output_rules["__default_success__"]
+            return TaskResult(status, message, output)
+        else:
+            status, message = self._output_rules["__default__"]
+            return TaskResult(status, message, output)
