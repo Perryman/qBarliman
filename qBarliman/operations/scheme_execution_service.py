@@ -35,7 +35,7 @@ class SchemeExecutionService(QObject):
     """Service for executing Scheme code."""
 
     processOutput = Signal(str, str, str)  # task_type, stdout, stderr
-    processFinished = Signal(str, int)  # task_type, exit_code
+    processFinished = Signal(str, int)  # task_type, exit_code  <-- Still emits exit code
     processError = Signal(str, str)  # task_type, error_message
     processStarted = Signal(str)  # task_type
 
@@ -43,6 +43,7 @@ class SchemeExecutionService(QObject):
         super().__init__(parent)
         self.process_manager = ProcessManager()
         self._task_type = ""
+        self._stdout = ""  # Store stdout here!
         self.start_time = 0
         self.colors = {
             "default": QColor(Qt.GlobalColor.black),
@@ -68,7 +69,10 @@ class SchemeExecutionService(QObject):
         # Simplified and unified output rules.
         self._output_rules = {
             "parse-error-in-defn": (TaskStatus.PARSE_ERROR, "Parse error"),
-            "illegal-sexp-in-defn": (TaskStatus.SYNTAX_ERROR, "Illegal s-expression"),
+            "illegal-sexp-in-defn": (
+                TaskStatus.SYNTAX_ERROR,
+                "Illegal s-expression",
+            ),
             "()": (TaskStatus.EVALUATION_FAILED, "Evaluation Failed"),
             "illegal-sexp-in-test/answer": (
                 TaskStatus.SYNTAX_ERROR,
@@ -113,19 +117,21 @@ class SchemeExecutionService(QObject):
 
     @Slot(str, str, str)
     def _handle_output(self, task_type: str, stdout: str, stderr: str):
-        elapsed_time = time.monotonic() - self.start_time
-        result = self._process_output(stdout, task_type)
-        result.elapsed_time = elapsed_time
+        # Store stdout for later processing in _handle_finish
+        self._stdout = stdout
 
     @Slot(str, int)
     def _handle_finish(self, task_type: str, exit_code: int):
-        # Process the output to generate a TaskResult if you need to consolidate the results
-        # and then emit a signal with the TaskResult object.
-        debug(f"Handle finish: {task_type=} {exit_code=}")
-        result = self._process_output(self.execution_service.stdout, task_type)
-        self.processFinished.emit(task_type, result.status)
+        """Processes the output and creates the TaskResult."""
+        elapsed_time = time.monotonic() - self.start_time
+        result = self._process_output(self._stdout, task_type, exit_code)
+        result.elapsed_time = elapsed_time
+        debug(f"process finished {result=}")
+        # Don't emit a signal.  The controller gets the result directly.
+        # The controller will use _handle_output to handle this result.
+        self._handle_output(task_type, result.output, result.message if result.status == TaskStatus.FAILED else "")
 
-    def _process_output(self, output: str, task_type: str) -> TaskResult:
+    def _process_output(self, output: str, task_type: str, exit_code: int = 0) -> TaskResult:
         """Processes the output string using a unified rule set."""
         output = output.strip()
 
@@ -148,12 +154,12 @@ class SchemeExecutionService(QObject):
             status, message = self._output_rules[output]
             return TaskResult(status, message, output)
 
-        # Default success or global default based on task type
-        if task_type in ("simple", "test", "allTests"):
-            status, message = self._output_rules["__default_success__"]
-            return TaskResult(status, message, output)
+        # Determine success/failure based on exit_code AND task_type
+        if exit_code == 0:
+            if task_type in ("simple", "test", "allTests"):
+                status, message = self._output_rules["__default_success__"]
+                return TaskResult(status, message, output)
 
-        # Global default
+        # If exit_code is not 0, or task_type is unknown, it's a failure
         status, message = self._output_rules["__default__"]
-        debug(f"_process_output: {task_type=} {output=} {status=} {message=}")
         return TaskResult(status, message, output)

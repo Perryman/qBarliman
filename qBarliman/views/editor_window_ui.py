@@ -96,8 +96,8 @@ class EditorWindowUI(QWidget):
         elif signal_name == "test_cases":
             self._set_test_cases(data)
         elif signal_name == "test_status":
-            test_num, status = data
-            self.testStatusLabels[test_num].setText(status)
+            index, message, color = data
+            self._set_test_status(index, message, color) #Use the new method
         elif signal_name == "debug":
             debug(f"{signal_name=}")
             debug(f"{data=}")
@@ -112,7 +112,8 @@ class EditorWindowUI(QWidget):
 
     def _set_error_text(self, view: QTextEdit, data: str):
         if data:
-            view.setPlainText(data)
+            # Append the new error message with a newline.
+            view.append(data)
             view.show()
         else:
             view.clear()
@@ -127,3 +128,10 @@ class EditorWindowUI(QWidget):
                 self.testInputs[i].setText(inp)
             if i < len(self.testExpectedOutputs):
                 self.testExpectedOutputs[i].setText(exp)
+
+    def _set_test_status(self, index: int, status: str, color: str):
+        """Helper to set text and color on a test status label."""
+        if 0 <= index < len(self.testStatusLabels):
+            label = self.testStatusLabels[index]
+            label.setText(status)
+            label.setStyleSheet(f"color: {color};")

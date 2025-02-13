@@ -14,7 +14,10 @@ from qBarliman.constants import (
 )
 from qBarliman.models.scheme_document import SchemeDocument
 from qBarliman.models.scheme_document_data import SchemeDocumentData
-from qBarliman.operations.scheme_execution_service import SchemeExecutionService
+from qBarliman.operations.scheme_execution_service import (
+    SchemeExecutionService,
+    TaskResult,
+)  # Import TaskResult
 from qBarliman.utils.load_interpreter import load_interpreter_code
 from qBarliman.utils.query_builder import QueryBuilder
 from qBarliman.views.editor_window_ui import EditorWindowUI
@@ -25,7 +28,6 @@ class EditorWindowController(QObject):
         super().__init__(parent)
 
         self.mainWindow = QMainWindow()
-        # self.mainWindow.setWindowTitle("qBarliman")
         self.view = EditorWindowUI(self.mainWindow)
         self.mainWindow.setCentralWidget(self.view)
 
@@ -82,6 +84,7 @@ class EditorWindowController(QObject):
         self.run_code_timer.timeout.connect(self._run_code_debounce)  # type: ignore
         self._debounce_interval = 0.5  # seconds
         self._pending_task_type = None
+        self._current_task_type = None
 
     def _get_status_color(self, status_name: str) -> str:
         """Get color name for a given status."""
@@ -91,14 +94,16 @@ class EditorWindowController(QObject):
 
     def _get_test_status_update(self, result):
         try:
-            index = int(self._current_task_type[4:]) - 1  # Extract index
+            index = int(
+                self._current_task_type[4:]
+            ) - 1  # Extract index and ensure it's 0-indexed
             if 0 <= index < len(self.view.testStatusLabels):
-                return (
+                return (  # Return only index, message and color
                     index,
                     result.message,
                     self._get_status_color(result.status.name),
                 )
-        except ValueError:
+        except (ValueError, TypeError, AttributeError):
             return None
 
     def update_model(self, updater):
@@ -109,12 +114,13 @@ class EditorWindowController(QObject):
                 "updater function must return a SchemeDocumentData instance"
             )
 
-        old_data = self.model._data
-        self.model._data = new_data  # Update *after* storing the old data
+        old_data = self.model._data  # Store *before* update
+        self.model._data = new_data  # Update the model
 
-        # Always emit signals *first*.
+        # Emit signals based on what changed.
         if new_data.definition_text != old_data.definition_text:
             self.model.definitionTextChanged.emit(new_data.definition_text)
+            self._schedule_run_code()  # Run simple or allTests
 
         if (
             new_data.test_inputs != old_data.test_inputs
@@ -123,30 +129,26 @@ class EditorWindowController(QObject):
             self.model.testCasesChanged.emit(
                 new_data.test_inputs, new_data.test_expected
             )
-
-        # Check for individual test changes *after* emitting signals.
-        old_inputs = old_data.test_inputs
-        new_inputs = new_data.test_inputs
-        old_expected = old_data.test_expected
-        new_expected = new_data.test_expected
-
-        if new_data.definition_text != old_data.definition_text:
-            self._schedule_run_code()  # Run either simple or allTests
-        elif any(
-            new_inputs[i] != old_inputs[i] or new_expected[i] != old_expected[i]
-            for i in range(len(new_inputs))
-            if i < len(old_inputs) and i < len(old_expected)
-        ):
-            for i in range(len(new_inputs)):
-                if i < len(old_inputs) and new_inputs[i] != old_inputs[i]:
+            # Find *which* test changed, and run *only* that test.
+            for i in range(len(new_data.test_inputs)):
+                if (
+                    i < len(old_data.test_inputs)
+                    and new_data.test_inputs[i] != old_data.test_inputs[i]
+                ) or (
+                    i < len(old_data.test_expected)
+                    and new_data.test_expected[i] != old_data.test_expected[i]
+                ):
                     self._schedule_run_code(task_type=f"test{i + 1}")
-                    return
-                if i < len(old_expected) and new_expected[i] != old_expected[i]:
-                    self._schedule_run_code(task_type=f"test{i + 1}")
-                    return
+                    break  # Only run one test at a time
 
     def _schedule_run_code(self, task_type=None):
         """Schedules run_code to be called after a debounce interval."""
+        # If no task_type is specified, determine based on model.
+        if task_type is None:
+            if any(self.model.test_inputs) or any(self.model.test_expected):
+                task_type = "allTests"
+            else:
+                task_type = "simple"
         self._pending_task_type = task_type
         self.run_code_timer.start(int(self._debounce_interval * 1000))  # Convert to ms
 
@@ -158,32 +160,37 @@ class EditorWindowController(QObject):
 
     def run_code(self, task_type=None):
         """Runs the Scheme code based on the current model."""
+        # Clear error output at the start of each run
+        self.view.update_ui("error_output", "")
+
         if self.model.validate():
-            # Determine which query to run based on the model state.
-            # If task_type is given, run it.
-            if task_type:
+            # Determine which query to run
+            if task_type is None:  # If not already determined
+                if any(self.model.test_inputs) or any(self.model.test_expected):
+                    task_type = "allTests"
+                    script = self.query_builder.build_all_tests_query(self.model._data)
+                else:
+                    task_type = "simple"
+                    script = self.query_builder.build_simple_query(self.model._data)
+            elif task_type.startswith("test"):
                 script = self.query_builder.build_test_query(
                     self.model._data, int(task_type[4:])
                 )
-                self._current_task_type = task_type
-            elif any(self.model.test_inputs) or any(self.model.test_expected):
-                # If any test inputs or expected outputs are defined, run all tests.
-                script = self.query_builder.build_all_tests_query(self.model._data)
-                self._current_task_type = "allTests"
-            else:
-                # Otherwise, run a simple query.
-                script = self.query_builder.build_simple_query(self.model._data)
-                self._current_task_type = "simple"
+            else:  # Added error handling for invalid task_type
+                warn(f"Invalid task type: {task_type}")
+                return
 
-            # Create a temporary file for the script.
-            script_path = os.path.join(TMP_DIR, f"{self._current_task_type}.scm")
+            self._current_task_type = task_type
+
+            # Create temporary file
+            script_path = os.path.join(TMP_DIR, f"{task_type}.scm")
             with open(script_path, "w") as f:
                 f.write(script)
 
-            self.execution_service.execute_scheme(script_path, self._current_task_type)
+            self.execution_service.execute_scheme(script_path, task_type)
 
     def setup_connections(self):
-        # --- Connect Model Signals to View Slots ---
+        # Model to View
         self.model.definitionTextChanged.connect(
             lambda text: self.view.update_ui("definition_text", text)
         )
@@ -192,11 +199,11 @@ class EditorWindowController(QObject):
                 "test_cases", (inputs, expected)
             )
         )
-        self.model.statusChanged.connect(  # Connect the status change
+        self.model.statusChanged.connect(
             lambda status: self.view.update_ui("status", status)
-        )
+        )  # Not used, but good to have
 
-        # --- Connect View Signals to Controller (Model Updates) ---
+        # View to Controller (Model Updates)
         self.view.schemeDefinitionView.textChanged.connect(
             lambda: self.update_model(
                 lambda m: m.update_definition_text(
@@ -217,54 +224,44 @@ class EditorWindowController(QObject):
                 )
             )
 
-        # --- Connect Execution Service Signals ---
+        # Execution Service Signals
         self.execution_service.processStarted.connect(
             lambda task_type: info(f"Process started: {task_type}")
         )
-        # Continue to write debug output handlers
-        self.execution_service.processOutput.connect(self._handle_process_output)
-        self.execution_service.processFinished.connect(self._handle_process_finished)
+        self.execution_service.processOutput.connect(
+            self._handle_process_output
+        )  # Handle output AND errors
         self.execution_service.processError.connect(
-            lambda task_type, error: (
-                (
-                    self.view.update_ui("error_output", f"{error=}"),
-                    debug(f"Connected signals. {error=}"),
-                )
-            )
-        )
+            lambda task_type, error: self.view.update_ui("error_output", error)
+        )  # We just update the UI, since we don't need to do anything else.
 
     @Slot(str, str, str)
     def _handle_process_output(self, task_type: str, stdout: str, stderr: str):
-        """Handles process output in a data-driven way."""
+        """Handles process output, including errors, using a declarative approach."""
+        debug(f"Process output: {task_type=}, {stdout=}, {stderr=}")
 
         if stderr:
             self.view.update_ui("error_output", stderr)
-            return
+            return  # If we have an error, stop processing
 
-        if not stdout:
-            return
-        self._current_task_type = (
-            task_type  # We store it for use in _get_test_status_update
-        )
         result = self.execution_service._process_output(stdout, task_type)
+        info(f"{result=}")
+        self._current_task_type = (
+            task_type  # We store this to use it in _get_test_status_update
+        )
+        # Find and apply UI update handlers, same declarative logic as before.
+        handlers = self._output_handlers.get(
+            task_type, self._output_handlers["__default__"]
+        )
+        # Special handling for test cases, in order to update test UI properly
+        if task_type.startswith("test") and handlers == self._output_handlers["__default__"]:
+                handlers = self._output_handlers.get("test")
 
-        # Find the appropriate handler rules based on task_type.
-        handlers = self._output_handlers.get(task_type)
-        if not handlers:
-            for key, value in self._output_handlers.items():
-                if key.startswith("test") and task_type.startswith("test"):
-                    handlers = value
-                    break  # Use the handlers for test
-        if not handlers:
-            handlers = self._output_handlers["__default__"]  # Use default if necessary
-
-        # Apply all the handlers for this task type.
         for signal_name, handler_func in handlers:
             update_data = handler_func(result)
             if update_data is not None:
-                self.view.update_ui(signal_name, update_data)
-
-    @Slot(str, int)
-    def _handle_process_finished(self, task_type: str, exit_code: int):
-        info(f"Process finished: {task_type}, exit code: {exit_code}")
-        pass
+                if signal_name == "test_status":
+                    index, message, color = update_data
+                    self.view.update_ui(signal_name, (index, message, color))
+                else:
+                    self.view.update_ui(signal_name, update_data)
