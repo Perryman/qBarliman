@@ -2,34 +2,45 @@ from PySide6.QtCore import QObject, QProcess, Signal
 
 
 class ProcessManager(QObject):
+    """Manages external process execution."""
+
+    processStarted = Signal(int)  # PID
     processOutput = Signal(str, str)  # stdout, stderr
     processFinished = Signal(int)  # exit code
-    processError = Signal(str)  # Error message
+    processError = Signal(str)  # error message
 
-    def __init__(self):
-        super().__init__()
-        self.process = None  # Initialize to None
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._process = QProcess(self)
 
-    def run_process(self, command, arguments):
-        # Create a NEW QProcess instance each time.
-        self.process = QProcess()
-        self.process.start(command, arguments)
+        # Connect QProcess signals directly
+        self._process.started.connect(
+            lambda: self.processStarted.emit(self._process.processId())
+        )
+        self._process.readyReadStandardOutput.connect(self._handle_stdout)
+        self._process.readyReadStandardError.connect(self._handle_stderr)
+        self._process.finished.connect(lambda code, _: self.processFinished.emit(code))
+        self._process.errorOccurred.connect(
+            lambda error: self.processError.emit(str(error))
+        )
 
-        # Connect *directly* to anonymous functions (lambdas)
-        self.process.readyReadStandardOutput.connect(
-            lambda: self.processOutput.emit(
-                self.process.readAllStandardOutput().data().decode(), ""
-            )
-        )
-        self.process.readyReadStandardError.connect(
-            lambda: self.processOutput.emit(
-                "", self.process.readAllStandardError().data().decode()
-            )
-        )
-        self.process.finished.connect(
-            lambda exitCode, exitStatus: self.processFinished.emit(exitCode)
-        )
-        self.process.errorOccurred.connect(
-            lambda error: self.processError.emit(str(f"{error=}"))
-        )
-        return self.process.processId()
+    @property
+    def process(self) -> QProcess:
+        return self._process
+
+    def run_process(self, command: str, arguments: list[str]) -> int:
+        """Start process and return PID."""
+        self._stdout_buffer = ""
+        self._stderr_buffer = ""
+        self._process.start(command, arguments)
+        return self._process.processId()
+
+    def _handle_stdout(self):
+        data = self._process.readAllStandardOutput().data().decode()
+        if data:
+            self.processOutput.emit(data, "")
+
+    def _handle_stderr(self):
+        data = self._process.readAllStandardError().data().decode()
+        if data:
+            self.processOutput.emit("", data)

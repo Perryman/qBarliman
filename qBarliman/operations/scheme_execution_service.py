@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QProcess, Signal
 
 from qBarliman.constants import SCHEME_EXECUTABLE, debug, warn
 from qBarliman.operations.process_manager import ProcessManager
@@ -41,6 +41,8 @@ class SchemeExecutionService(QObject):
         self._task_type = ""
         self.start_time = 0
         self._current_process_id = None
+        self._stdout_buffer = ""
+        self._stderr_buffer = ""
 
         self.process_manager.processOutput.connect(self._handle_output)
         self.process_manager.processFinished.connect(self._handle_finished)
@@ -64,11 +66,18 @@ class SchemeExecutionService(QObject):
         self._task_type = task_type
         self.start_time = time.monotonic()
         self.processStarted.emit(task_type)
+
+        process = self.process_manager.process
+        process.setProcessChannelMode(
+            QProcess.SeparateChannels
+        )  # Separate stdout/stderr
+
         command = SCHEME_EXECUTABLE
         arguments = ["--script", script_path]
-        pid = self.process_manager.run_process(command, arguments)  # Get the PID
-        self._current_process_id = pid  # Store the PID
-        return pid  # Return PID
+
+        pid = self.process_manager.run_process(command, arguments)
+        self._current_process_id = pid
+        return pid
 
     def kill_process(self, pid=None):
         debug(f"Kill process, pid={pid}")
@@ -83,7 +92,12 @@ class SchemeExecutionService(QObject):
         # No else case
 
     def _handle_output(self, stdout: str, stderr: str):
-        pass  # All processing in _handle_finished
+        """Accumulate output from process."""
+        if stdout:
+            self._stdout_buffer += stdout
+        if stderr:
+            self._stderr_buffer += stderr
+        debug(f"Process output - stdout: {stdout}, stderr: {stderr}")
 
     def _handle_error(self, error: str):
         result = TaskResult(self._task_type, TaskStatus.FAILED, error)
@@ -91,14 +105,22 @@ class SchemeExecutionService(QObject):
 
     def _handle_finished(self, exit_code: int):
         elapsed_time = time.monotonic() - self.start_time
-        stdout = self.process_manager.process.readAllStandardOutput().data().decode()
-        stderr = self.process_manager.process.readAllStandardError().data().decode()
 
-        result = self._process_output(stdout, self._task_type, exit_code)
+        debug(f"Process finished with exit code {exit_code}")
+        debug(f"Final stdout: {self._stdout_buffer}")
+        debug(f"Final stderr: {self._stderr_buffer}")
+
+        # Use accumulated output instead of trying to read at the end
+        result = self._process_output(self._stdout_buffer, self._task_type, exit_code)
         result.elapsed_time = elapsed_time
-        result.output = stderr if stderr else result.output
+        result.output = self._stderr_buffer if self._stderr_buffer else result.output
+
+        # Clear buffers
+        self._stdout_buffer = ""
+        self._stderr_buffer = ""
+
         self.taskResultReady.emit(result)
-        self._current_process_id = None  # Clear after finish
+        self._current_process_id = None
 
     def _process_output(
         self, output: str, task_type: str, exit_code: int = 0
