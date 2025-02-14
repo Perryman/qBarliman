@@ -60,7 +60,10 @@ INTERP_FILE = "interp.scm"
 File paths
 """
 
-TMP_DIR = tempfile.mkdtemp(prefix="barliman_tmp_")
+TMP_DIR = tempfile.gettempdir()
+TMP_DIR = os.path.join(TMP_DIR, "qBarliman")
+if not os.path.exists(TMP_DIR):
+    os.makedirs(TMP_DIR)  # Uncommented to ensure the directory is created
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MINIKANREN_ROOT = os.path.join(BASE_DIR, "minikanren", "core")
 REL_INTERP_DIR = os.path.join(BASE_DIR, "minikanren", "rel-interp")

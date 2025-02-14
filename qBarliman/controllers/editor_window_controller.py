@@ -13,11 +13,10 @@ from qBarliman.constants import (
     warn,
 )
 from qBarliman.models.scheme_document import SchemeDocument
-from qBarliman.models.scheme_document_data import SchemeDocumentData
 from qBarliman.operations.scheme_execution_service import (
     SchemeExecutionService,
     TaskResult,
-    TaskStatus
+    TaskStatus,
 )
 from qBarliman.utils.query_builder import QueryBuilder
 from qBarliman.views.editor_window_ui import EditorWindowUI
@@ -140,7 +139,9 @@ class EditorWindowController(QObject):
     def initialize_ui(self):
         # Initial UI setup, now uses update_ui
         self.view.update_ui("definition_text", self.model.definition_text)
-        self.view.update_ui("test_cases", (self.model.test_inputs, self.model.test_expected))
+        self.view.update_ui(
+            "test_cases", (self.model.test_inputs, self.model.test_expected)
+        )
         self.view.reset_test_ui()
 
     def update_model(self, updater):
@@ -207,7 +208,6 @@ class EditorWindowController(QObject):
             script = self.query_builder.build_test_query(
                 self.model._data, index + 1
             )  # Adjust for 1-based indexing
-
         else:
             warn(f"Invalid task type: {task_type}")
             return
@@ -215,6 +215,7 @@ class EditorWindowController(QObject):
         if script:
             self._current_task_type = task_type
             script_path = os.path.join(TMP_DIR, f"{task_type}.scm")
+            debug(f"Writing script to {script_path}:")
             with open(script_path, "w") as f:
                 f.write(script)
             task_id = self.execution_service.execute_scheme(script_path, task_type)
