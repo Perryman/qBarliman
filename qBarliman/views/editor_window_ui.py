@@ -20,6 +20,14 @@ class EditorWindowUI(QWidget):
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
         main_window.setWindowTitle("qBarliman")
+        # Set default font for all text views
+        self.default_font = QFont("Courier New", 16)
+        self.default_font.setStyleHint(QFont.StyleHint.Monospace)
+        self.default_font.setStyleStrategy(QFont.PreferDefault)
+        self.default_font.setFixedPitch(True)
+        self.default_font.setFamilies(
+            ["Source Code Pro", "SF Mono", "Lucida Console", "Monaco"]
+        )
         self._buildUI()
 
         # Declarative UI update map: signal_name -> (widget, update_function)
@@ -45,20 +53,18 @@ class EditorWindowUI(QWidget):
         }
 
     def _buildUI(self):
-        default_font = QFont("Monospace", 16)
-        default_font.setStyleHint(QFont.StyleHint.Monospace)
 
         self.setMinimumWidth(1000)
         self.setMinimumHeight(800)
         self.mainLayout = QVBoxLayout(self)
 
         self.schemeDefinitionView = SchemeEditorTextView(self)
-        self.schemeDefinitionView.setFont(default_font)
+        self.schemeDefinitionView.setFont(self.default_font)
         self.schemeDefinitionView.setPlaceholderText("Enter Scheme definitions...")
 
         self.bestGuessView = SchemeEditorTextView(self)
         self.bestGuessView.setReadOnly(True)
-        self.bestGuessView.setFont(default_font)
+        self.bestGuessView.setFont(self.default_font)
         self.bestGuessView.setPlaceholderText("No best guess available.")
 
         self.errorOutputView = SchemeEditorTextView(self)
@@ -85,11 +91,11 @@ class EditorWindowUI(QWidget):
             test_num = i + 1
             self.testsGrid.addWidget(QLabel(f"Test {test_num}:"), i, 0)
             input_field = QLineEdit(self)
-            input_field.setFont(default_font)
+            input_field.setFont(self.default_font)
             self.testInputs.append(input_field)
             self.testsGrid.addWidget(input_field, i, 1)
             expected_field = QLineEdit(self)
-            expected_field.setFont(default_font)
+            expected_field.setFont(self.default_font)
             self.testExpectedOutputs.append(expected_field)
             self.testsGrid.addWidget(expected_field, i, 2)
             status_label = QLabel("", self)

@@ -19,12 +19,6 @@ class SchemeEditorTextView(QTextEdit):
         self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         self.setTabStopDistance(20)  # Equivalent to 4 spaces
 
-        # Set up standard format
-        format = QTextCharFormat()
-        format.setFontFamily("Monospace")
-        format.setFontPointSize(14)
-        self.setCurrentCharFormat(format)
-
     def keyPressEvent(self, event: QKeyEvent):
         # Detect Control+Space
         if (
