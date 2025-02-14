@@ -61,18 +61,21 @@ File paths
 """
 
 TMP_DIR = tempfile.gettempdir()
-TMP_DIR = os.path.join(TMP_DIR, "qBarliman")
+TMP_DIR = os.path.join(TMP_DIR, "qBarliman").replace("\\", "\\\\")
 if not os.path.exists(TMP_DIR):
-    os.makedirs(TMP_DIR)  # Uncommented to ensure the directory is created
+    os.makedirs(TMP_DIR)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = BASE_DIR.replace("\\", "\\\\")
 MINIKANREN_ROOT = os.path.join(BASE_DIR, "minikanren", "core")
 REL_INTERP_DIR = os.path.join(BASE_DIR, "minikanren", "rel-interp")
 TEMPLATES_DIR = os.path.join(BASE_DIR, "minikanren", "templates")
 
-MK_VICARE_FULLPATH = os.path.join(MINIKANREN_ROOT, MK_VICARE_FILE)
-MK_FULLPATH = os.path.join(MINIKANREN_ROOT, MK_FILE)
-MK_TEST_CHECK_FULLPATH = os.path.join(MINIKANREN_ROOT, MK_TEST_CHECK_FILE)
-INTERP_FULLPATH = os.path.join(REL_INTERP_DIR, INTERP_FILE)
+MK_VICARE_FULLPATH = os.path.join(MINIKANREN_ROOT, MK_VICARE_FILE).replace("\\", "\\\\")
+MK_FULLPATH = os.path.join(MINIKANREN_ROOT, MK_FILE).replace("\\", "\\\\")
+MK_TEST_CHECK_FULLPATH = os.path.join(MINIKANREN_ROOT, MK_TEST_CHECK_FILE).replace(
+    "\\", "\\\\"
+)
+INTERP_FULLPATH = os.path.join(REL_INTERP_DIR, INTERP_FILE).replace("\\", "\\\\")
 
 CORE_FULLPATH = [
     MK_VICARE_FULLPATH,
@@ -82,10 +85,14 @@ CORE_FULLPATH = [
 ]
 
 
-INTERP_ALLTESTS_P_1 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_FILE_1)
-INTERP_ALLTESTS_P_2 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_FILE_2)
-INTERP_EVAL_P_1 = os.path.join(TEMPLATES_DIR, EVAL_QS_FILE_1)
-INTERP_EVAL_P_2 = os.path.join(TEMPLATES_DIR, EVAL_QS_FILE_2)
+INTERP_ALLTESTS_P_1 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_FILE_1).replace(
+    "\\", "\\\\"
+)
+INTERP_ALLTESTS_P_2 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_FILE_2).replace(
+    "\\", "\\\\"
+)
+INTERP_EVAL_P_1 = os.path.join(TEMPLATES_DIR, EVAL_QS_FILE_1).replace("\\", "\\\\")
+INTERP_EVAL_P_2 = os.path.join(TEMPLATES_DIR, EVAL_QS_FILE_2).replace("\\", "\\\\")
 
 """
 System paths and configuration
