@@ -22,7 +22,7 @@ class SchemeEditorTextView(QTextEdit):
         self._block_text_changed_signal = False  # Add flag to block signal emission
 
     def keyPressEvent(self, event: QKeyEvent):
-        # Disable listener while proessing key event
+        # Disable listener while processing key event
         self.setUpdatesEnabled(False)
 
         # Detect Control+Space
@@ -33,10 +33,13 @@ class SchemeEditorTextView(QTextEdit):
             var_to_insert = self.findNextUnusedLogicVar()
             if var_to_insert:
                 cursor = self.textCursor()
+                current_pos = cursor.position()
                 # Insert with undo support
                 cursor.beginEditBlock()
                 cursor.insertText(var_to_insert)
                 cursor.endEditBlock()
+                # Move cursor to end of inserted text
+                cursor.setPosition(current_pos + len(var_to_insert))
                 self.setTextCursor(cursor)
             else:
                 super().keyPressEvent(event)

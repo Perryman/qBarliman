@@ -85,6 +85,7 @@ INTERP_EVAL_P_2 = os.path.join(TEMPLATES_DIR, EVAL_QS_FILE_2)
 TEST_TIMEOUT_MS = 5000  # 5 seconds for testing
 PROCESS_TIMEOUT_MS = 600000  # 60 seconds for processes
 
+
 def find_scheme_executable() -> Optional[str]:
     """
     Find the Scheme executable in the system PATH.
@@ -102,6 +103,7 @@ def find_scheme_executable() -> Optional[str]:
             return exe
 
     return None
+
 
 SCHEME_EXECUTABLE = find_scheme_executable()
 if not SCHEME_EXECUTABLE:

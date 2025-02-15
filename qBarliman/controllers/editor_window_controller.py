@@ -223,14 +223,15 @@ class EditorWindowController(QObject):
                 )
             )
         )
+        # Update test input/output connections to use textModified instead of textChanged
         for i, input_field in enumerate(self.view.testInputs):
-            input_field.textChanged.connect(
+            input_field.textModified.connect(
                 lambda text, idx=i: self.update_model(
                     lambda m: m.update_test_input(idx + 1, text)
                 )
             )
         for i, output_field in enumerate(self.view.testExpectedOutputs):
-            output_field.textChanged.connect(
+            output_field.textModified.connect(
                 lambda text, idx=i: self.update_model(
                     lambda m: m.update_test_expected(idx + 1, text)
                 )

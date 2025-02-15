@@ -3,7 +3,6 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QGridLayout,
     QLabel,
-    QLineEdit,
     QSplitter,
     QTextEdit,
     QVBoxLayout,
@@ -11,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from qBarliman.operations.scheme_execution_service import TaskStatus
+from qBarliman.widgets.scheme_editor_line_edit import SchemeEditorLineEdit
 from qBarliman.widgets.scheme_editor_text_view import SchemeEditorTextView
 
 
@@ -19,9 +19,9 @@ class EditorWindowUI(QWidget):
 
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
-        self.main_window = main_window  # Store reference to main window
+        self.main_window = main_window
         main_window.setWindowTitle("qBarliman")
-        # Set default font for all text views
+
         self.default_font = QFont("Courier New", 16)
         self.default_font.setStyleHint(QFont.StyleHint.Monospace)
         self.default_font.setStyleStrategy(QFont.PreferDefault)
@@ -107,17 +107,21 @@ class EditorWindowUI(QWidget):
         for i in range(6):
             test_num = i + 1
             self.testsGrid.addWidget(QLabel(f"Test {test_num}:"), i, 0)
-            input_field = QLineEdit(self)
+
+            input_field = SchemeEditorLineEdit(self)
             input_field.setFont(self.default_font)
             self.testInputs.append(input_field)
             self.testsGrid.addWidget(input_field, i, 1)
-            expected_field = QLineEdit(self)
+
+            expected_field = SchemeEditorLineEdit(self)
             expected_field.setFont(self.default_font)
             self.testExpectedOutputs.append(expected_field)
             self.testsGrid.addWidget(expected_field, i, 2)
+
             status_label = QLabel("", self)
             self.testStatusLabels.append(status_label)
             self.testsGrid.addWidget(status_label, i, 3)
+
         self.mainLayout.addLayout(self.testsGrid)
 
     def update_ui(self, update_type, data):
