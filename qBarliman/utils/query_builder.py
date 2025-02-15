@@ -2,15 +2,7 @@ from qBarliman.constants import LOAD_MK_SCM, LOAD_MK_VICARE_SCM, debug
 from qBarliman.models.scheme_document_data import SchemeDocumentData
 from qBarliman.templates import (
     ALL_TEST_WRITE_T,
-    DEFINE_ANS_T,
-    EVAL_BOTH_T,
-    EVAL_COMPLETE_T,
-    EVAL_FAST_T,
-    EVAL_T,
-    FULL_T,
-    PARSE_ANS_T,
-    PARSE_FAKE_DEFNS_ANS_T,
-    QUERY_SIMPLE_T,
+    MAKE_QUERY_STRING_T,
 )
 from qBarliman.utils.load_interpreter import load_interpreter_code
 from qBarliman.utils.rainbowp import rainbowp
@@ -43,7 +35,7 @@ class QueryBuilder:
         )
         debug(f"All test inputs: {rainbowp(all_test_inputs)}")
         debug(f"All test outputs: {rainbowp(all_test_outputs)}")
-        debug(f"All test definition text: {rainbowp(scheme_document.definition_text)}")
+        debug(f"All test definition text:\n{rainbowp(scheme_document.definition_text)}")
         debug(
             f"After substitution: {rainbowp(ALL_TEST_WRITE_T.substitute(definitionText=scheme_document.definition_text, allTestInputs=all_test_inputs, allTestOutputs=all_test_outputs))}"
         )
@@ -62,48 +54,17 @@ class QueryBuilder:
         """Helper function to build queries."""
 
         if query_type == "simple":
-            body = ",_"
-            expected_out = "q"
-            name = "-simple"
-            parse_ans_string = PARSE_ANS_T.substitute(
-                name=name, defns=scheme_document.definition_text, body=body
-            )
+            return MAKE_QUERY_STRING_T.safe_substitute()
 
-        elif query_type == "test":
-            body = scheme_document.test_inputs[test_number - 1]
-            expected_out = scheme_document.test_expected[test_number - 1]
-            name = f"-test{test_number}"
-            parse_ans_string = PARSE_FAKE_DEFNS_ANS_T.substitute(
-                name=name, defns=scheme_document.definition_text, body=body
-            )
+        # elif query_type == "test":
+        #     body = scheme_document.test_inputs[test_number - 1]
+        #     expected_out = scheme_document.test_expected[test_number - 1]
+        #     name = f"-test{test_number}"
+        #     parse_ans_string = PARSE_FAKE_DEFNS_ANS_T.substitute(
+        #         name=name, defns=scheme_document.definition_text, body=body
+        #     )
         else:
             raise ValueError(f"Invalid query type: {query_type}")
-
-        eval_string = EVAL_T.substitute(
-            defns=scheme_document.definition_text, body=body, expectedOut=expected_out
-        )
-        eval_string_fast = EVAL_FAST_T.substitute(eval_string=eval_string)
-        eval_string_complete = EVAL_COMPLETE_T.substitute(eval_string=eval_string)
-        eval_string_both = EVAL_BOTH_T.substitute(
-            eval_string_fast=eval_string_fast, eval_string_complete=eval_string_complete
-        )
-        define_ans_string = DEFINE_ANS_T.substitute(
-            name=name, eval_string_both=eval_string_both
-        )
-        full_query = FULL_T.substitute(
-            query_type=query_type,
-            parse_ans_string=parse_ans_string,
-            define_ans_string=define_ans_string,
-        )
-
-        if query_type == "simple":
-            return QUERY_SIMPLE_T.substitute(
-                load_mk_vicare=LOAD_MK_VICARE_SCM,
-                load_mk=LOAD_MK_SCM,
-                interp_string=self.interpreter_code,
-                query_simple=full_query,
-            )
-        return f"{LOAD_MK_VICARE_SCM}\n{LOAD_MK_SCM}\n{self.interpreter_code}\n{full_query}"
 
     def _format_scheme_value(self, value: str) -> str:
         """Formats a Python string for use in Scheme code."""

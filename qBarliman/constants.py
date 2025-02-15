@@ -39,8 +39,8 @@ def debug(*args) -> None:
 
 ALLTESTS_QS_FILE_1 = "interp-alltests-query-string-part-1.scm"
 ALLTESTS_QS_FILE_2 = "interp-alltests-query-string-part-2.scm"
-EVAL_QS_FILE_1 = "interp-eval-query-string-part-1.scm"
-EVAL_QS_FILE_2 = "interp-eval-query-string-part-2.scm"
+INTERP_EVAL_QS_FILE_1 = "interp-eval-query-string-part-1.scm"
+INTERP_EVAL_QS_FILE_2 = "interp-eval-query-string-part-2.scm"
 BARLIMAN_QUERY_SIMPLE_FILE = "barliman-query-simple.scm"
 BARLIMAN_QUERY_ALLTESTS_FILE = "barliman-query-alltests.scm"
 
@@ -77,8 +77,8 @@ CORE_FULLPATH = [
 
 INTERP_ALLTESTS_P_1 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_FILE_1)
 INTERP_ALLTESTS_P_2 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_FILE_2)
-INTERP_EVAL_P_1 = os.path.join(TEMPLATES_DIR, EVAL_QS_FILE_1)
-INTERP_EVAL_P_2 = os.path.join(TEMPLATES_DIR, EVAL_QS_FILE_2)
+INTERP_EVAL_P_1 = os.path.join(TEMPLATES_DIR, INTERP_EVAL_QS_FILE_1)
+INTERP_EVAL_P_2 = os.path.join(TEMPLATES_DIR, INTERP_EVAL_QS_FILE_2)
 
 # System paths and configuration
 
@@ -116,38 +116,21 @@ else:
 
 # Load query strings from files
 
-ALLTESTS_QUERY_STRING_1 = ""
-ALLTESTS_QUERY_STRING_2 = ""
-EVAL_STRING_PART_1 = ""
-EVAL_STRING_PART_2 = ""
+def load_safe(file_path: str) -> str:
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            good(f"loaded {file_path}")
+            return content
+    except Exception as e:
+        warn(f"LOAD_ERROR -- reading {file_path}: {e}")
+        return ""
 
-try:
-    with open(INTERP_ALLTESTS_P_1, "r", encoding="utf-8") as f:
-        ALLTESTS_QUERY_STRING_1 = f.read()
-        good(f"loaded {INTERP_ALLTESTS_P_1}")
-except Exception as e:
-    warn(f"LOAD_ERROR -- reading {INTERP_ALLTESTS_P_1}: {e}")
-
-try:
-    with open(INTERP_ALLTESTS_P_2, "r", encoding="utf-8") as f:
-        ALLTESTS_QUERY_STRING_2 = f.read()
-        good(f"loaded {INTERP_ALLTESTS_P_2}")
-except Exception as e:
-    warn(f"LOAD_ERROR -- reading {INTERP_ALLTESTS_P_2}: {e}")
-
-try:
-    with open(INTERP_EVAL_P_1, "r", encoding="utf-8") as f:
-        EVAL_STRING_PART_1 = f.read()
-        good(f"loaded {INTERP_EVAL_P_1}")
-except Exception as e:
-    warn(f"LOAD_ERROR -- reading {INTERP_EVAL_P_1}: {e}")
-
-try:
-    with open(INTERP_EVAL_P_2, "r", encoding="utf-8") as f:
-        EVAL_STRING_PART_2 = f.read()
-        good(f"loaded {INTERP_EVAL_P_2}")
-except Exception as e:
-    warn(f"LOAD_ERROR -- reading {INTERP_EVAL_P_2}: {e}")
+ALLTESTS_QUERY_STRING_1 = load_safe(INTERP_ALLTESTS_P_1)
+ALLTESTS_QUERY_STRING_2 = load_safe(INTERP_ALLTESTS_P_2)
+EVAL_STRING_1 = load_safe(INTERP_EVAL_P_1)
+EVAL_STRING_2 = load_safe(INTERP_EVAL_P_2)
+INTERP_SCM = load_safe(INTERP_FULLPATH)
 
 # Default value fields
 
