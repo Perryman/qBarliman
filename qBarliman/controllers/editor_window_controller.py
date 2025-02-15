@@ -70,18 +70,18 @@ class EditorWindowController(QObject):
                 self.view.update_ui("best_guess", r.output),
                 self.view.update_ui(
                     "best_guess_status",
-                    (f"Succeeded ({r.elapsed_time:.2f} s)", r.status),
+                    (f"{r.elapsed_time:.2f}s", r.status),
                 ),
             ),
             ("allTests", TaskStatus.FAILED): lambda r: (
                 self.view.update_ui("best_guess", ""),
                 self.view.update_ui(
-                    "best_guess_status", (f"Failed ({r.elapsed_time:.2f} s)", r.status)
+                    "best_guess_status", (f"Failed {r.elapsed_time:.2f}s", r.status)
                 ),
             ),
             ("allTests", TaskStatus.SYNTAX_ERROR): lambda r: (
                 self.view.update_ui(
-                    "best_guess_status", (f"Failed ({r.elapsed_time:.2f} s)", r.status)
+                    "best_guess_status", (f"Failed {r.elapsed_time:.2f}s", r.status)
                 ),
             ),
             # Use a generic "test" prefix for individual tests
@@ -90,7 +90,7 @@ class EditorWindowController(QObject):
                     "test_status",
                     (
                         int(r.task_type[4:]) - 1,
-                        f"Succeeded ({r.elapsed_time:.2f} s)",
+                        f"{r.elapsed_time:.2f}s",
                         r.status,
                     ),
                 ),
@@ -101,7 +101,7 @@ class EditorWindowController(QObject):
                     (
                         int(r.task_type[4:]) - 1,
                         (
-                            f"Failed ({r.elapsed_time:.2f} s)"
+                            f"Failed {r.elapsed_time:.2f}s"
                             if r.elapsed_time is not None
                             else "Failed"
                         ),

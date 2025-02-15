@@ -24,7 +24,7 @@ $load_mk
 $interp
 $query_simple
 """
-)  # Use a single multiline string
+)
 
 ALL_TESTS_QUERY_T = Template(
     """
