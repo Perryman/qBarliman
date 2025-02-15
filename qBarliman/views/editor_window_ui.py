@@ -19,6 +19,7 @@ class EditorWindowUI(QWidget):
 
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
+        self.main_window = main_window  # Store reference to main window
         main_window.setWindowTitle("qBarliman")
         # Set default font for all text views
         self.default_font = QFont("Courier New", 16)
@@ -32,16 +33,24 @@ class EditorWindowUI(QWidget):
 
         # Declarative UI update map: signal_name -> (widget, update_function)
         self._widget_updaters = {
-            "definition_text": (self.schemeDefinitionView, lambda w, text: w.setPlainText(text)),
+            "definition_text": (
+                self.schemeDefinitionView,
+                lambda w, text: w.setPlainText(text),
+            ),
             "best_guess": (self.bestGuessView, lambda w, text: w.setPlainText(text)),
             "definition_status": (self.definitionStatusLabel, self._set_labeled_text),
             "best_guess_status": (self.bestGuessStatusLabel, self._set_labeled_text),
             "error_output": (self.errorOutputView, self._set_error_text),
-            "test_cases": (None, self._set_test_cases),  # Special case: no single widget
-            "test_status": (None, self._set_test_status),  # Special case: indexed update
+            "test_cases": (
+                None,
+                self._set_test_cases,
+            ),
+            "test_status": (
+                None,
+                self._set_test_status,
+            ),
         }
 
-        # Centralized color mapping (could also be a method)
         self.status_colors = {
             TaskStatus.SUCCESS: "green",
             TaskStatus.PARSE_ERROR: "magenta",
@@ -61,6 +70,14 @@ class EditorWindowUI(QWidget):
         self.schemeDefinitionView = SchemeEditorTextView(self)
         self.schemeDefinitionView.setFont(self.default_font)
         self.schemeDefinitionView.setPlaceholderText("Enter Scheme definitions...")
+
+        # Store controller reference and connect signals
+        self.controller = self.main_window.controller
+        self.schemeDefinitionView.codeTextChanged.connect(
+            lambda text: self.controller.update_model(
+                lambda m: m.update_definition_text(text)
+            )
+        )
 
         self.bestGuessView = SchemeEditorTextView(self)
         self.bestGuessView.setReadOnly(True)
@@ -115,12 +132,14 @@ class EditorWindowUI(QWidget):
         if updater:
             widget, update_func = updater
             if widget:
-                update_func(widget, data) #call the widget
+                update_func(widget, data)
             else:
-                update_func(data) #directly call function
+                update_func(data)
 
-    def set_definition_text(self, text: str):
-        self.schemeDefinitionView.setPlainText(text)
+    def set_definition_text(self, widget: SchemeEditorTextView, text: str):
+        """Updates the definition text while preserving cursor position."""
+        if widget and text != widget.toPlainText():  # Only update if content changed
+            widget.setPlainText(text)  # Use the overridden setPlainText method
 
     def set_best_guess(self, text: str):
         self.bestGuessView.setPlainText(text)
@@ -136,10 +155,10 @@ class EditorWindowUI(QWidget):
     def set_error_output(self, text: str):
         if text:
             self.errorOutputView.setPlainText(text)
-            self.errorOutputView.show()  # Show the view
+            self.errorOutputView.show()
         else:
             self.errorOutputView.clear()
-            self.errorOutputView.hide()  # Hide the view
+            self.errorOutputView.hide()
 
     def set_test_cases(self, inputs: list[str], expected: list[str]):
         for i, (inp, exp) in enumerate(zip(inputs, expected)):
@@ -156,8 +175,8 @@ class EditorWindowUI(QWidget):
 
     def _set_labeled_text(self, label: QLabel, data: tuple[str, TaskStatus]):
         """Helper to set text and color on a label."""
-        text, status = data  # Receive status, not color
-        color = self.status_colors.get(status, "black")  # Look up color
+        text, status = data
+        color = self.status_colors.get(status, "black")
         label.setText(text)
         label.setStyleSheet(f"color: {color};")
 

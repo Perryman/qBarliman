@@ -5,9 +5,7 @@ import sys
 import tempfile
 from typing import Optional
 
-"""
-Temporary flags
-"""
+## Temporary flags
 VERBOSE = 3
 WARN = "❌‼️‼️"  # 0
 GOOD = "✅"  # 1
@@ -37,9 +35,7 @@ def debug(*args) -> None:
         print(f"\033[36m{DEBUG}\033[0m" if USE_COLORS else DEBUG, *args)
 
 
-"""
-Query string (QS) file names
-"""
+# Query string (QS) file names
 
 ALLTESTS_QS_FILE_1 = "interp-alltests-query-string-part-1.scm"
 ALLTESTS_QS_FILE_2 = "interp-alltests-query-string-part-2.scm"
@@ -48,17 +44,14 @@ EVAL_QS_FILE_2 = "interp-eval-query-string-part-2.scm"
 BARLIMAN_QUERY_SIMPLE_FILE = "barliman-query-simple.scm"
 BARLIMAN_QUERY_ALLTESTS_FILE = "barliman-query-alltests.scm"
 
-"""
-Minikanren file names
-"""
+# Minikanren file names
+
 MK_VICARE_FILE = "mk-vicare.scm"
 MK_FILE = "mk.scm"
 MK_TEST_CHECK_FILE = "test-check.scm"
 INTERP_FILE = "interp.scm"
 
-"""
-File paths
-"""
+# File paths
 
 TMP_DIR = tempfile.gettempdir()
 TMP_DIR = os.path.join(TMP_DIR, "qBarliman")
@@ -87,15 +80,11 @@ INTERP_ALLTESTS_P_2 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_FILE_2)
 INTERP_EVAL_P_1 = os.path.join(TEMPLATES_DIR, EVAL_QS_FILE_1)
 INTERP_EVAL_P_2 = os.path.join(TEMPLATES_DIR, EVAL_QS_FILE_2)
 
-"""
-System paths and configuration
-"""
-# Process timeouts in milliseconds - increase for debugging
+# System paths and configuration
+
 TEST_TIMEOUT_MS = 5000  # 5 seconds for testing
 PROCESS_TIMEOUT_MS = 600000  # 60 seconds for processes
 
-
-# Scheme executable detection
 def find_scheme_executable() -> Optional[str]:
     """
     Find the Scheme executable in the system PATH.
@@ -109,14 +98,11 @@ def find_scheme_executable() -> Optional[str]:
         potential_executables = [exe + ".exe" for exe in potential_executables]
 
     for exe in potential_executables:
-        # use shutil.which instead of os.system to locate the executable safely
         if shutil.which(exe) is not None:
             return exe
 
     return None
 
-
-# Find Scheme executable
 SCHEME_EXECUTABLE = find_scheme_executable()
 if not SCHEME_EXECUTABLE:
     warn(
@@ -128,21 +114,21 @@ else:
 
 # Load query strings from files
 
-ALLTESTS_STRING_PART_1 = ""
-ALLTESTS_STRING_PART_2 = ""
+ALLTESTS_QUERY_STRING_1 = ""
+ALLTESTS_QUERY_STRING_2 = ""
 EVAL_STRING_PART_1 = ""
 EVAL_STRING_PART_2 = ""
 
 try:
     with open(INTERP_ALLTESTS_P_1, "r", encoding="utf-8") as f:
-        ALLTESTS_STRING_PART_1 = f.read()
+        ALLTESTS_QUERY_STRING_1 = f.read()
         good(f"loaded {INTERP_ALLTESTS_P_1}")
 except Exception as e:
     warn(f"LOAD_ERROR -- reading {INTERP_ALLTESTS_P_1}: {e}")
 
 try:
     with open(INTERP_ALLTESTS_P_2, "r", encoding="utf-8") as f:
-        ALLTESTS_STRING_PART_2 = f.read()
+        ALLTESTS_QUERY_STRING_2 = f.read()
         good(f"loaded {INTERP_ALLTESTS_P_2}")
 except Exception as e:
     warn(f"LOAD_ERROR -- reading {INTERP_ALLTESTS_P_2}: {e}")
@@ -161,9 +147,7 @@ try:
 except Exception as e:
     warn(f"LOAD_ERROR -- reading {INTERP_EVAL_P_2}: {e}")
 
-"""
-Default value fields
-"""
+# Default value fields
 
 DEFAULT_DEFINITIONS = [
     "(define ,A",
@@ -189,13 +173,10 @@ DEFAULT_TEST_EXPECTED_OUTPUTS = [
     "",
 ]
 
+# Scheme code constants
 
-"""
-Scheme code constants
-"""
-
-LOAD_MK_VICARE_SCM = f'(load "{MK_VICARE_FULLPATH.replace("\\", "\\\\")}")'
-LOAD_MK_SCM = f'(load "{MK_FULLPATH.replace("\\", "\\\\")}")'
+LOAD_MK_VICARE_SCM = f'(load "{MK_VICARE_FULLPATH}")'.replace("\\", "\\\\")
+LOAD_MK_SCM = f'(load "{MK_FULLPATH}")'.replace("\\", "\\\\")
 
 SIMPLE_Q = "simple"
 INDIVIDUAL_Q = "individual test"

@@ -1,19 +1,19 @@
+from qBarliman.constants import LOAD_MK_SCM, LOAD_MK_VICARE_SCM, debug
 from qBarliman.models.scheme_document_data import SchemeDocumentData
 from qBarliman.templates import (
-    QUERY_SIMPLE_T,
     ALL_TEST_WRITE_T,
-    SIMPLE_PARSE_ANS_T,
-    PARSE_ANS_T,
-    EVAL_T,
-    EVAL_FAST_T,
-    EVAL_COMPLETE_T,
-    EVAL_BOTH_T,
     DEFINE_ANS_T,
+    EVAL_BOTH_T,
+    EVAL_COMPLETE_T,
+    EVAL_FAST_T,
+    EVAL_T,
     FULL_T,
+    PARSE_ANS_T,
+    PARSE_FAKE_DEFNS_ANS_T,
+    QUERY_SIMPLE_T,
 )
-from qBarliman.constants import LOAD_MK_VICARE_SCM, LOAD_MK_SCM, debug
-from qBarliman.utils.rainbowp import rainbowp
 from qBarliman.utils.load_interpreter import load_interpreter_code
+from qBarliman.utils.rainbowp import rainbowp
 
 
 class QueryBuilder:
@@ -65,7 +65,7 @@ class QueryBuilder:
             body = ",_"
             expected_out = "q"
             name = "-simple"
-            parse_ans_string = SIMPLE_PARSE_ANS_T.substitute(
+            parse_ans_string = PARSE_ANS_T.substitute(
                 name=name, defns=scheme_document.definition_text, body=body
             )
 
@@ -73,17 +73,20 @@ class QueryBuilder:
             body = scheme_document.test_inputs[test_number - 1]
             expected_out = scheme_document.test_expected[test_number - 1]
             name = f"-test{test_number}"
-            parse_ans_string = PARSE_ANS_T.substitute(
+            parse_ans_string = PARSE_FAKE_DEFNS_ANS_T.substitute(
                 name=name, defns=scheme_document.definition_text, body=body
             )
         else:
             raise ValueError(f"Invalid query type: {query_type}")
 
-        # Common query building logic (using the templates correctly!)
-        eval_string = EVAL_T.substitute(defns=scheme_document.definition_text, body=body, expectedOut=expected_out)
+        eval_string = EVAL_T.substitute(
+            defns=scheme_document.definition_text, body=body, expectedOut=expected_out
+        )
         eval_string_fast = EVAL_FAST_T.substitute(eval_string=eval_string)
         eval_string_complete = EVAL_COMPLETE_T.substitute(eval_string=eval_string)
-        eval_string_both = EVAL_BOTH_T.substitute(eval_string_fast=eval_string_fast, eval_string_complete=eval_string_complete)
+        eval_string_both = EVAL_BOTH_T.substitute(
+            eval_string_fast=eval_string_fast, eval_string_complete=eval_string_complete
+        )
         define_ans_string = DEFINE_ANS_T.substitute(
             name=name, eval_string_both=eval_string_both
         )
@@ -98,9 +101,8 @@ class QueryBuilder:
                 load_mk_vicare=LOAD_MK_VICARE_SCM,
                 load_mk=LOAD_MK_SCM,
                 interp_string=self.interpreter_code,
-                query_simple=full_query,  # Correct substitution!
+                query_simple=full_query,
             )
-        # For "test" queries, also need to load miniKanren *before* the generated code
         return f"{LOAD_MK_VICARE_SCM}\n{LOAD_MK_SCM}\n{self.interpreter_code}\n{full_query}"
 
     def _format_scheme_value(self, value: str) -> str:

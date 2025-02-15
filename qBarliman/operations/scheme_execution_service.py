@@ -50,7 +50,7 @@ class SchemeExecutionService(QObject):
 
     def execute_scheme(self, script_path: str, task_type: str):
         """Execute a Scheme script."""
-        debug(f"Execute scheme: {script_path=}")
+        debug(f"Execute: scheme --{script_path=}")
         if not os.path.exists(script_path):
             result = TaskResult(task_type, TaskStatus.FAILED, "Script file not found.")
             self.taskResultReady.emit(result)
@@ -110,12 +110,10 @@ class SchemeExecutionService(QObject):
         debug(f"Final stdout: {self._stdout_buffer}")
         debug(f"Final stderr: {self._stderr_buffer}")
 
-        # Use accumulated output instead of trying to read at the end
         result = self._process_output(self._stdout_buffer, self._task_type, exit_code)
         result.elapsed_time = elapsed_time
         result.output = self._stderr_buffer if self._stderr_buffer else result.output
 
-        # Clear buffers
         self._stdout_buffer = ""
         self._stderr_buffer = ""
 

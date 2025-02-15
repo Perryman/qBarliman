@@ -1,11 +1,12 @@
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QKeyEvent, QUndoStack
 from PySide6.QtWidgets import QTextEdit
-from PySide6.QtGui import QKeyEvent, QTextCursor, QTextCharFormat, QUndoStack
-from PySide6.QtCore import Qt
 
 
 class SchemeEditorTextView(QTextEdit):
     # List of logic variables to cycle through
     logic_vars = [f",{chr(c)}" for c in range(65, 91)]  # ,A ... ,Z
+    codeTextChanged = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -18,8 +19,12 @@ class SchemeEditorTextView(QTextEdit):
         # Configure editor settings
         self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         self.setTabStopDistance(20)  # Equivalent to 4 spaces
+        self._block_text_changed_signal = False  # Add flag to block signal emission
 
     def keyPressEvent(self, event: QKeyEvent):
+        # Disable listener while proessing key event
+        self.setUpdatesEnabled(False)
+
         # Detect Control+Space
         if (
             event.modifiers() == Qt.KeyboardModifier.ControlModifier
@@ -37,6 +42,11 @@ class SchemeEditorTextView(QTextEdit):
                 super().keyPressEvent(event)
         else:
             super().keyPressEvent(event)
+
+        # Re-enable listener and emit signal if not blocked
+        self.setUpdatesEnabled(True)
+        if not self._block_text_changed_signal:
+            self.codeTextChanged.emit(self.toPlainText())
 
     def findNextUnusedLogicVar(self) -> str:
         current_text = self.toPlainText()
@@ -61,3 +71,18 @@ class SchemeEditorTextView(QTextEdit):
             cursor.insertText(text)
         else:
             super().insertFromMimeData(source)
+
+    def setPlainText(self, text: str, cursor_pos=None):
+        """Override setPlainText to preserve cursor and emit signal."""
+        self._block_text_changed_signal = True  # Block signal before change
+        old_cursor_pos = self.textCursor().position()
+        super().setPlainText(text)
+        if cursor_pos is not None:
+            cursor = self.textCursor()  # Get the current cursor
+            cursor.setPosition(cursor_pos)  # Set the position
+            self.setTextCursor(cursor)  # Apply the modified cursor
+        else:
+            cursor = self.textCursor()  # Get the current cursor
+            cursor.setPosition(old_cursor_pos)  # Restore old position
+            self.setTextCursor(cursor)  # Apply the modified cursor
+        self._block_text_changed_signal = False  # Re-enable signal

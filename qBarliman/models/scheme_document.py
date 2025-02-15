@@ -38,6 +38,8 @@ class SchemeDocument(QObject):
                 else DEFAULT_TEST_EXPECTED_OUTPUTS.copy()
             ),
         )
+        self.definitionTextChanged.emit(self.definition_text)
+        self.testCasesChanged.emit(self.test_inputs, self.test_expected)
 
     @property
     def definition_text(self) -> str:
@@ -60,7 +62,7 @@ class SchemeDocument(QObject):
         return self._data.is_valid
 
     def update_definition_text(self, new_text: str) -> None:
-        if new_text != self._data.definition_text:
+        if new_text != self._data.definition_text:  # Only update if text changed
             self._data = self._data.update_definition_text(new_text)
             self.definitionTextChanged.emit(new_text)
 

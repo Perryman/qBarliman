@@ -4,9 +4,6 @@ from PySide6.QtCore import QObject, QTimer, Slot
 from PySide6.QtWidgets import QMainWindow
 
 from qBarliman.constants import (
-    DEFAULT_DEFINITIONS,
-    DEFAULT_TEST_EXPECTED_OUTPUTS,
-    DEFAULT_TEST_INPUTS,
     TMP_DIR,
     debug,
     info,
@@ -26,9 +23,10 @@ class EditorWindowController(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.mainWindow = QMainWindow()
-        self.view = EditorWindowUI(self.mainWindow)
-        self.mainWindow.setCentralWidget(self.view)
+        self.main_window = QMainWindow()
+        self.main_window.controller = self  # Add controller reference
+        self.view = EditorWindowUI(self.main_window)
+        self.main_window.setCentralWidget(self.view)
 
         self.query_builder = QueryBuilder()
         info("Initialized EditorWindowController")
@@ -36,11 +34,7 @@ class EditorWindowController(QObject):
         self.execution_service = SchemeExecutionService()
 
         # Initialize model
-        self.model = SchemeDocument(
-            definition_text="\n".join(DEFAULT_DEFINITIONS),
-            test_inputs=DEFAULT_TEST_INPUTS.copy(),
-            test_expected=DEFAULT_TEST_EXPECTED_OUTPUTS.copy(),
-        )
+        self.model = SchemeDocument()
 
         # Debounce timer
         self.run_code_timer = QTimer()
@@ -126,18 +120,17 @@ class EditorWindowController(QObject):
 
         # Set up signals and UI
         self.setup_connections()
-        self.mainWindow.show()
+        self.main_window.show()
         self.initialize_ui()
         self.run_code("simple")  # Initial run
 
     def maybe_kill_alltests(self):
-        """Helper function to avoid repetition"""
+        """Kill all_tests if it is running."""
         if self._all_tests_task_id is not None:
             self.execution_service.kill_process(self._all_tests_task_id)
             self._all_tests_task_id = None
 
     def initialize_ui(self):
-        # Initial UI setup, now uses update_ui
         self.view.update_ui("definition_text", self.model.definition_text)
         self.view.update_ui(
             "test_cases", (self.model.test_inputs, self.model.test_expected)
@@ -145,19 +138,11 @@ class EditorWindowController(QObject):
         self.view.reset_test_ui()
 
     def update_model(self, updater):
-        """Applies an updater function DIRECTLY TO THE MODEL."""
-        # NO MORE SchemeDocumentData copy here!
-
-        # Get the old data for comparison *before* updating.
+        """Applies an updater function to the model."""
         old_data = self.model._data
-
-        updater(self.model)  # Call the updater directly on the model.
-
-        # Get the new data *after* the update.
+        updater(self.model)
         new_data = self.model._data
 
-        # Now, check for changes and schedule tasks.  This logic is
-        # *essential* for triggering re-runs.
         if new_data.definition_text != old_data.definition_text:
             self._schedule_run_code("simple")
 
@@ -167,8 +152,6 @@ class EditorWindowController(QObject):
         ):
             if any(new_data.test_inputs) or any(new_data.test_expected):
                 self._schedule_run_code("allTests")
-
-            # Schedule individual tests *only* if input/expected changed AND non-empty.
             for i in range(len(new_data.test_inputs)):
                 if (
                     i < len(old_data.test_inputs)
@@ -220,12 +203,10 @@ class EditorWindowController(QObject):
                 f.write(script)
             task_id = self.execution_service.execute_scheme(script_path, task_type)
             if task_type == "allTests":
-                self._all_tests_task_id = task_id  # Store task ID
-
+                self._all_tests_task_id = task_id
         # No else needed.  If !script, it's handled by error callbacks.
 
     def setup_connections(self):
-        # Model to View - NOW CORRECT
         self.model.definitionTextChanged.connect(
             lambda text: self.view.update_ui("definition_text", text)
         )
@@ -235,7 +216,6 @@ class EditorWindowController(QObject):
             )
         )
 
-        # View to Controller (Model Updates) - CORRECT.  Lambdas call update_model.
         self.view.schemeDefinitionView.textChanged.connect(
             lambda: self.update_model(
                 lambda m: m.update_definition_text(
@@ -246,17 +226,16 @@ class EditorWindowController(QObject):
         for i, input_field in enumerate(self.view.testInputs):
             input_field.textChanged.connect(
                 lambda text, idx=i: self.update_model(
-                    lambda m: m.update_test_input(idx + 1, text)  # Corrected index
+                    lambda m: m.update_test_input(idx + 1, text)
                 )
             )
         for i, output_field in enumerate(self.view.testExpectedOutputs):
             output_field.textChanged.connect(
                 lambda text, idx=i: self.update_model(
-                    lambda m: m.update_test_expected(idx + 1, text)  # Corrected index
+                    lambda m: m.update_test_expected(idx + 1, text)
                 )
             )
 
-        # Connect to the *unified* taskResultReady signal.
         self.execution_service.taskResultReady.connect(self._handle_task_result)
         self.execution_service.processStarted.connect(self._handle_process_started)
 
@@ -286,4 +265,6 @@ class EditorWindowController(QObject):
         # If still not found, do nothing
         if action is not None:
             action(result)  # Execute the UI update action
-        self.view.update_ui("error_output", result.output)  # Always set error output
+
+        if result.status != TaskStatus.SUCCESS:
+            self.view.update_ui("error_output", result.output)
