@@ -1,84 +1,97 @@
-# PySide6 GUI Development Guidelines (Python-Centric, Declarative)
+# PySide6 Application Pattern Guide
 
-These guidelines focus on building maintainable PySide6 applications using a purely Python-based, declarative style, emphasizing separation of concerns and immutability. **We are _not_ using Qt Designer or `.ui` files.**
+## Core Pattern: Observable View Model with Dependency Injection
 
-**1. Project Structure:**
+We use a metaclass-based observable pattern with dependency injection for PySide6 apps.
 
-- **Modules:**
-  - `qBarliman.py`: Entry point (minimal).
-  - `views/`: UI layout and structure (one file per major component).
-  - `widgets/`: Reusable, custom widgets.
-  - `controllers/`: Connects UI and model (view model).
-  - `models/`: Immutable data classes and `QObject` wrappers.
-  - `operations/`: Asynchronous operations (no UI logic).
-  - `utils/`: Reusable helper functions.
-  - `resources/`: Icons, images, etc. (if needed).
-- **File Size:** Keep files under 200 lines.
+```python
+# Core pattern example
+class Observable(Generic[T]):
+    """Descriptor for auto-signal properties"""
+    def __init__(self, type_: Type[T], default: T = None):
+        self.type_ = type_
+        self.default = default
 
-**2. UI (`views/` and `widgets/`):**
+    def __set_name__(self, owner, name):
+        self.name = name
+        setattr(owner, f"{name}_changed", Signal(self.type_))
 
-- **Declarative Layout:** Define UI layout _directly in Python_ using layout managers (`QVBoxLayout`, `QHBoxLayout`, `QGridLayout`). No `.ui` files.
+class ViewModel(QObject, metaclass=ViewModelMeta):
+    """Base class for view models with observable properties"""
+    title = Observable(str, "")
+    count = Observable(int, 0)
+    items = Observable(List[str], [])
 
-  ```python
-  # Example: views/my_view.py
-  from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel
+class View(QWidget):
+    """View binds to ViewModel properties"""
+    def __init__(self, view_model: ViewModel):
+        self.view_model = view_model
+        self.bind_view_model()
 
-  class MyView(QWidget):
-      def __init__(self):
-          super().__init__()
-          layout = QVBoxLayout(self)
-          self.label = QLabel("Initial Text")
-          self.button = QPushButton("Click Me")
-          layout.addWidget(self.label)
-          layout.addWidget(self.button)
-  ```
+    def bind_view_model(self):
+        self.view_model.title_changed.connect(self.title_label.setText)
+```
 
-- **Custom Widgets (`widgets/`):** Subclass Qt widgets for reusable components.
-- **Views orchestrate Widgets**
+## Project Structure
 
-**3. Signals, Slots, and Events:**
+```
+app/
+  models/      # Immutable dataclasses
+  viewmodels/  # Observable state + logic
+  views/       # UI components
+  services/    # Business logic
+```
 
-- **`@Slot` and `Signal`:** Use Qt's signals and slots for _all_ communication. No direct method calls between components.
-- **`@Slot`:** Decorate methods connected to signals. Use argument types.
-  ```python
-  @Slot(str)
-  def update_label(self, text):
-      self.label.setText(text)
-  ```
-- **`Signal`:** Define custom signals in classes inheriting from `QObject`. Specify argument types.
-- **Lambdas in `connect()`:** Use lambdas directly for concise, asynchronous handling, especially with `QProcess`. Avoid many small `handle_...` methods.
-  ```python
-  # Example (operations/process_manager.py)
-  self.process.readyReadStandardOutput.connect(
-      lambda: self.processOutput.emit(self.process.readAllStandardOutput().data().decode(), "")
-  )
-  ```
-- **Event Handlers (Optional):** For complex model updates, consider a decorator-based event handler (like `event_handler`), but prioritize signals/slots for most interactions.
+## Key Principles
 
-**4. Model:**
+1. **Observable Properties**: Use `Observable` descriptors for auto-signals
+2. **View Models**: Hold state and logic, emit change signals
+3. **Dependency Injection**: Views receive view models
+4. **Immutable Models**: Use dataclasses for data
+5. **Declarative Bindings**: Connect signals to slots directly
 
-- **Immutable Data:** Use `dataclasses.dataclass(frozen=True)` or similar for immutable model data.
-- **`QObject` Wrapper:** Wrap the data class in a `QObject` for Qt signal/slot integration. Emit signals on data changes.
+## Anti-Patterns to Avoid
 
-**5. Asynchronous Operations (`operations/`):**
+❌ Direct UI updates from services
+❌ Complex event handlers
+❌ UI files or Qt Designer
+❌ Manual signal/slot management
 
-- **No UI Logic:** `operations/` classes manage asynchronous tasks (e.g., `QProcess` via a `ProcessManager`). They _only_ communicate via signals.
-- **NO `ui_update_interface.py`:** Operations do _not_ update the UI. UI listens to signals.
+## Quick Examples
 
-**6. General:**
+### Good:
+```python
+# View Model with observable properties
+class EditorViewModel(ViewModel):
+    code = Observable(str)
+    result = Observable(str)
+    error = Observable(str)
 
-- **Separation of Concerns:** Strictly separate UI, logic, and data.
-- **DRY:** Don't repeat yourself.
-- **KISS:** Keep it simple.
-- **Immutability:** Favor immutable data structures.
-- **Inversion of Control:** Components _provide_ data/events, they don't _control_ how they're used.
+# View binds to view model
+class EditorView(QWidget):
+    def __init__(self, vm: EditorViewModel):
+        self.vm = vm
+        self.vm.code_changed.connect(self.editor.setText)
+        self.vm.error_changed.connect(self.show_error)
+```
 
-**Simplified Signal/Slot/Abstraction Guide:**
+### Bad:
+```python
+# ❌ Don't do this
+class Editor:
+    def update_ui(self):
+        self.label.setText(self.get_status())
+    
+    def on_button_click(self):
+        self.update_ui()
+```
+```
 
-| Feature                | When to Use                                                 | Notes                                            |
-| ---------------------- | ----------------------------------------------------------- | ------------------------------------------------ |
-| `@Slot`                | Methods connected to signals.                               | Use argument types.                              |
-| `Signal`               | Defining custom signals (class must inherit `QObject`).     | Specify argument types.                          |
-| Lambdas in `connect()` | Concise asynchronous handling (especially with `QProcess`). | Avoid many small `handle_...` methods.           |
-| Immutable Data Classes | Representing the application's state.                       | `dataclasses.dataclass(frozen=True)` or similar. |
-| `QObject` Wrapper      | Integrate immutable data with Qt's signals/slots.           | Wrapper emits signals on data changes.           |
+This pattern:
+1. Reduces boilerplate through metaclasses
+2. Automates signal/slot connections
+3. Makes state changes predictable
+4. Simplifies testing
+5. Enforces clean architecture
+
+The key is using observable properties in view models that automatically emit signals, then binding views to those signals. This replaces manual event handling with declarative data flow.
