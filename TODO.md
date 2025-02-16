@@ -1,14 +1,18 @@
 # TODO ROADMAP
 
 ## Refactor Python Code
-- [ ] Refactor the `editor_window_controller.py` into smaller modules.
+- [X] Refactor the `editor_window_controller.py` into smaller modules.
+  - [ ] Refactor repeated code into abstracted functions.
 - [ ] Move constants and templates into `constants.py`.
-- [ ] Organize the project structure into appropriate subfolders (`controllers`, `operations`, `utils`, `widgets`).
+  - [ ] Refactor templates once basic functionality is working.
+- [X] Organize the project structure into appropriate subfolders (`controllers`, `operations`, `utils`, `widgets`).
 - [ ] Review and clean up any unused code or dependencies.
 
 ## Implementations
 - [ ] Finish implementing the `run_scheme` operation in `runschemeoperation.py`.
-- [ ] Complete the implementation of GUI widgets in `scheme_editor_text_view.py` and `spinner_widget.py`.
+  - [ ] Verify the correctness of the `run_scheme` operation.
+- [X] Complete the implementation of GUI widgets in `scheme_editor_text_view.py` and `spinner_widget.py`.
+  - [ ] Finish implementing timers (replacing spinners).
 
 ## Testing
 - [ ] Ensure tests run on window creation and display result.
