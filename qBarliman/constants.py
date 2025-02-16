@@ -126,8 +126,8 @@ def load_safe(file_path: str) -> str:
         warn(f"LOAD_ERROR -- reading {file_path}: {e}")
         return ""
 
-ALLTESTS_QUERY_STRING_1 = load_safe(INTERP_ALLTESTS_P_1)
-ALLTESTS_QUERY_STRING_2 = load_safe(INTERP_ALLTESTS_P_2)
+ALLTESTS_STRING_1 = load_safe(INTERP_ALLTESTS_P_1)
+ALLTESTS_STRING_2 = load_safe(INTERP_ALLTESTS_P_2)
 EVAL_STRING_1 = load_safe(INTERP_EVAL_P_1)
 EVAL_STRING_2 = load_safe(INTERP_EVAL_P_2)
 INTERP_SCM = load_safe(INTERP_FULLPATH)

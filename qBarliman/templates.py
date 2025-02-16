@@ -1,8 +1,8 @@
 from string import Template
 
 from qBarliman.constants import (
-    ALLTESTS_QUERY_STRING_1,
-    ALLTESTS_QUERY_STRING_2,
+    ALLTESTS_STRING_1,
+    ALLTESTS_STRING_2,
     EVAL_FLAGS_COMPLETE,
     EVAL_FLAGS_FAST,
     EVAL_STRING_COMPLETE,
@@ -93,6 +93,30 @@ $parse_ans_scm
 
 """
 )  # full_string
+##########
+
+
+##### func makeAllTestsQueryString
+##### ARGS: $defns $body $expected_out $simple_query $name
+
+ALL_TEST_WRITE_T = Template(
+    f"""
+;; allTests
+(define (ans-allTests)
+  (define (results)
+    {ALLTESTS_STRING_1}
+    (== `( $definitionText ) defn-list)
+
+    {ALLTESTS_STRING_2}
+        (== `( $definitionText ) defns) (appendo defns `(((lambda x x) $allTestInputs)) begin-body) (evalo `(begin . ,begin-body) (list $allTestOutputs))))))
+(let ((results-fast {EVAL_STRING_FAST}))
+  (if (null? results-fast)
+    {EVAL_STRING_COMPLETE}
+    results-fast)))
+"""
+)  # return fullString
+##########
+
 
 ##### func makeQuerySimpleForMondoSchemeFileString
 ##### ARGS: $defns  (inherited from MAKE_QUERY_STRING_T)
@@ -136,11 +160,11 @@ ALL_TEST_WRITE_T = Template(
 ;; allTests
 (define (ans-allTests)
   (define (results)
-    {ALLTESTS_QUERY_STRING_1}
+    {ALLTESTS_STRING_1}
     (== `( $definitionText ) defn-list)
 
     
-        {ALLTESTS_QUERY_STRING_2}
+        {{ALLTESTS_STRING_2}}
         (== `( $definitionText ) defns) (appendo defns `(((lambda x x) $allTestInputs)) begin-body) (evalo `(begin . ,begin-body) (list $allTestOutputs) )))))
 (let ((results-fast {EVAL_STRING_FAST}))
   (if (null? results-fast)

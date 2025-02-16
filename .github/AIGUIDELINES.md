@@ -2,7 +2,7 @@
 
 ## Core Pattern: Observable View Model with Dependency Injection
 
-We use a metaclass-based observable pattern with dependency injection for PySide6 apps.
+We use a metaclass-based observable pattern with dependency injection for PySide6 apps. Also, when encountering a series of if statements with various items, refactor them to use a common interface. This ensures that all items have the same input, and the concrete implementations handle the specific behaviors (strategy pattern).
 
 ```python
 # Core pattern example
@@ -34,7 +34,7 @@ class View(QWidget):
 
 ## Project Structure
 
-```
+```sh
 app/
   models/      # Immutable dataclasses
   viewmodels/  # Observable state + logic
@@ -59,7 +59,7 @@ app/
 
 ## Quick Examples
 
-### Good:
+### Good
 ```python
 # View Model with observable properties
 class EditorViewModel(ViewModel):
@@ -75,7 +75,7 @@ class EditorView(QWidget):
         self.vm.error_changed.connect(self.show_error)
 ```
 
-### Bad:
+### Bad
 ```python
 # ❌ Don't do this
 class Editor:
@@ -84,7 +84,6 @@ class Editor:
     
     def on_button_click(self):
         self.update_ui()
-```
 ```
 
 This pattern:
