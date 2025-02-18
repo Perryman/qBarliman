@@ -1,70 +1,142 @@
+from enum import Enum, auto
+from typing import Any, Dict, Optional, Protocol
+
+from PySide6.QtCore import QObject, Signal
+
 from qBarliman.constants import LOAD_MK_SCM, LOAD_MK_VICARE_SCM, debug
 from qBarliman.models.scheme_document_data import SchemeDocumentData
 from qBarliman.templates import (
     ALL_TEST_WRITE_T,
     MAKE_QUERY_STRING_T,
+    PARSE_ANS_STRING_T,
+    MAKE_QUERY_SIMPLE_FOR_MONDO_SCHEME_T,
+    MAKE_NEW_TEST_N_QUERY_STRING_T,
 )
-from qBarliman.utils.load_interpreter import load_interpreter_code
+from qBarliman.utils.load_interpreter import (
+    load_interpreter_code,
+)
 from qBarliman.utils.rainbowp import rainbowp
+from qBarliman.templates import unroll
 
 
-class QueryBuilder:
+class SchemeQueryType(Enum):
+    SIMPLE = auto()
+    TEST = auto()
+    ALL_TESTS = auto()
 
-    def __init__(self):
-        self.interpreter_code = load_interpreter_code()
 
-    def build_simple_query(self, scheme_document: SchemeDocumentData) -> str:
-        """Build query for simple evaluation."""
-        return self._build_query(scheme_document, "simple")
+class QueryStrategy(Protocol):
+    """Strategy protocol for building different types of queries"""
 
-    def build_test_query(
-        self, scheme_document: SchemeDocumentData, test_number: int
-    ) -> str:
-        """Build query for individual test."""
-        if not 1 <= test_number <= len(scheme_document.test_inputs):
-            raise ValueError(f"Invalid test number: {test_number}")
-        return self._build_query(scheme_document, "test", test_number)
+    interpreter_code: str  # Define as a property in the protocol
 
-    def build_all_tests_query(self, scheme_document: SchemeDocumentData) -> str:
-        """Build query for all tests."""
+    def build_query(self, data: Any) -> str: ...
+
+
+class BaseQueryStrategy:  # Abstract base class for common setup
+    def __init__(self, interpreter_code: str):
+        self.interpreter_code = interpreter_code
+
+
+class SimpleQueryStrategy(BaseQueryStrategy, QueryStrategy):
+    def build_query(self, document_data: SchemeDocumentData) -> str:
+        subs = {
+            "name": "-simple",
+            "defns": document_data.definition_text,
+            "body": ",_",
+            "expectedOut": "q",
+            "eval_string_fast": PARSE_ANS_STRING_T.template,
+        }
+        res = unroll(MAKE_QUERY_SIMPLE_FOR_MONDO_SCHEME_T, subs)
+        # debug(f"Simple query strategy:\n{rainbowp(res)}")
+        return res
+
+
+class TestQueryStrategy(BaseQueryStrategy, QueryStrategy):
+    def build_query(self, data: tuple[SchemeDocumentData, int]) -> str:
+        document_data, test_number = data
+        subs = {
+            "name": f"-{test_number}",
+            "loadFileString": "loadFileString",
+            "actualQueryFilePath": document_data.path,
+            "n": test_number,
+            "new_test_query_template_string": MAKE_QUERY_STRING_T.template,
+            "defns": document_data.definition_text,
+            "body": ",_",
+            "expectedOut": "q",
+            "eval_string_fast": PARSE_ANS_STRING_T.template,
+        }
+        res = unroll(MAKE_NEW_TEST_N_QUERY_STRING_T, subs)
+        debug(f"Test query strategy:\n{rainbowp(res)}")
+        return res
+
+
+class AllTestsQueryStrategy(BaseQueryStrategy, QueryStrategy):
+    def build_query(self, document_data: SchemeDocumentData) -> str:
         all_test_inputs = " ".join(
-            [self._format_scheme_value(x) for x in scheme_document.test_inputs]
+            [self._format_scheme_value(x) for x in document_data.test_inputs]
         )
         all_test_outputs = " ".join(
-            [self._format_scheme_value(x) for x in scheme_document.test_expected]
-        )
-        debug(f"All test inputs: {rainbowp(all_test_inputs)}")
-        debug(f"All test outputs: {rainbowp(all_test_outputs)}")
-        debug(f"All test definition text:\n{rainbowp(scheme_document.definition_text)}")
-        debug(
-            f"After substitution: {rainbowp(ALL_TEST_WRITE_T.substitute(definitionText=scheme_document.definition_text, allTestInputs=all_test_inputs, allTestOutputs=all_test_outputs))}"
-        )
-        return ALL_TEST_WRITE_T.substitute(
-            load_mk_vicare=LOAD_MK_VICARE_SCM,
-            load_mk=LOAD_MK_SCM,
-            interp_string=self.interpreter_code,
-            definitionText=scheme_document.definition_text,
-            allTestInputs=all_test_inputs,
-            allTestOutputs=all_test_outputs,
+            [self._format_scheme_value(x) for x in document_data.test_expected]
         )
 
-    def _build_query(
-        self, scheme_document: SchemeDocumentData, query_type: str, test_number: int = 0
-    ) -> str:
-        """Helper function to build queries."""
+        subs = {
+            "load_mk_vicare": LOAD_MK_VICARE_SCM,
+            "load_mk": LOAD_MK_SCM,
+            "interp_scm": self.interpreter_code,
+            "query_simple": MAKE_QUERY_STRING_T.template,
+            "defns": document_data.definition_text,
+            "body": ",_",
+            "expectedOut": "q",
+            "eval_string_fast": PARSE_ANS_STRING_T.template,
+            "all_tests_query": ALL_TEST_WRITE_T.template,
+            "all_test_inputs": all_test_inputs,
+            "all_test_outputs": all_test_outputs,
+            "definitionText": document_data.definition_text,
+            "allTestInputs": all_test_inputs,
+            "allTestOutputs": all_test_outputs,
+        }
 
-        if query_type == "simple":
-            return MAKE_QUERY_STRING_T.safe_substitute()
+        res = unroll(ALL_TEST_WRITE_T, subs)
+        debug(f"All tests query strategy:\n{rainbowp(res)}")
+        return res
 
-        # elif query_type == "test":
-        #     body = scheme_document.test_inputs[test_number - 1]
-        #     expected_out = scheme_document.test_expected[test_number - 1]
-        #     name = f"-test{test_number}"
-        #     parse_ans_string = PARSE_FAKE_DEFNS_ANS_T.substitute(
-        #         name=name, defns=scheme_document.definition_text, body=body
-        #     )
-        else:
-            raise ValueError(f"Invalid query type: {query_type}")
+    def _format_scheme_value(self, value: str) -> str:
+        if not value.strip():
+            return "'()"
+        return f"{value}"
+
+
+class QueryBuilder(QObject):
+    """Builds and executes Scheme queries using strategy pattern"""
+
+    queryBuilt = Signal(str, SchemeQueryType)
+
+    def __init__(self, interpreter_code: Optional[str] = None):
+        super().__init__()
+        # Load interpreter code here if not provided
+        self.interpreter_code = (
+            interpreter_code
+            if interpreter_code is not None
+            else load_interpreter_code()
+        )
+
+        # Initialize strategies with injected or loaded interpreter code
+        self._strategies: Dict[SchemeQueryType, QueryStrategy] = {
+            SchemeQueryType.SIMPLE: SimpleQueryStrategy(self.interpreter_code),
+            SchemeQueryType.TEST: TestQueryStrategy(self.interpreter_code),
+            SchemeQueryType.ALL_TESTS: AllTestsQueryStrategy(self.interpreter_code),
+        }
+
+    def build_query(self, query_type: SchemeQueryType, data: Any) -> str:
+        debug(f"Building query of type {query_type}")
+        strategy = self._strategies.get(query_type)
+        if not strategy:
+            raise ValueError(f"Unknown query type: {query_type}")
+
+        query = strategy.build_query(data)
+        self.queryBuilt.emit(query, query_type)
+        return query
 
     def _format_scheme_value(self, value: str) -> str:
         """Formats a Python string for use in Scheme code."""

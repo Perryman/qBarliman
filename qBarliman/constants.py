@@ -116,6 +116,7 @@ else:
 
 # Load query strings from files
 
+
 def load_safe(file_path: str) -> str:
     try:
         with open(file_path, "r", encoding="utf-8") as f:
@@ -125,6 +126,7 @@ def load_safe(file_path: str) -> str:
     except Exception as e:
         warn(f"LOAD_ERROR -- reading {file_path}: {e}")
         return ""
+
 
 ALLTESTS_STRING_1 = load_safe(INTERP_ALLTESTS_P_1)
 ALLTESTS_STRING_2 = load_safe(INTERP_ALLTESTS_P_2)

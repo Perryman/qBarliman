@@ -50,7 +50,7 @@ class SchemeExecutionService(QObject):
 
     def execute_scheme(self, script_path: str, task_type: str):
         """Execute a Scheme script."""
-        debug(f"Execute: scheme --{script_path=}")
+        debug(f"Execute: scheme --script {script_path}")
         if not os.path.exists(script_path):
             result = TaskResult(task_type, TaskStatus.FAILED, "Script file not found.")
             self.taskResultReady.emit(result)

@@ -15,12 +15,18 @@ from qBarliman.operations.scheme_execution_service import (
     TaskResult,
     TaskStatus,
 )
-from qBarliman.utils.query_builder import QueryBuilder
+from qBarliman.utils.load_interpreter import load_interpreter_code
+from qBarliman.utils.query_builder import QueryBuilder, SchemeQueryType
 from qBarliman.views.editor_window_ui import EditorWindowUI
 
 
 class EditorWindowController(QObject):
-    def __init__(self, parent=None):
+    def __init__(
+        self,
+        parent=None,
+        query_builder: QueryBuilder = None,
+        execution_service: SchemeExecutionService = None,
+    ):  # Inject dependencies
         super().__init__(parent)
 
         self.main_window = QMainWindow()
@@ -28,10 +34,15 @@ class EditorWindowController(QObject):
         self.view = EditorWindowUI(self.main_window)
         self.main_window.setCentralWidget(self.view)
 
-        self.query_builder = QueryBuilder()
+        # Use injected QueryBuilder or create a default one if not provided
+        self.query_builder = query_builder or QueryBuilder(
+            load_interpreter_code()
+        )  # Default + load_interpreter_code moved
+
         info("Initialized EditorWindowController")
 
-        self.execution_service = SchemeExecutionService()
+        # Use injected ExecutionService or create a default one if not provided
+        self.execution_service = execution_service or SchemeExecutionService()
 
         # Initialize model
         self.model = SchemeDocument()
@@ -46,7 +57,7 @@ class EditorWindowController(QObject):
         self._all_tests_task_id = None
 
         # Declarative UI update mappings: TaskResult -> UI Action
-        self._ui_actions = {  # Moved BEFORE run_code
+        self._ui_actions = {
             ("simple", TaskStatus.SUCCESS): lambda r: (
                 self.view.update_ui("definition_status", (r.message, r.status)),
             ),
@@ -181,30 +192,39 @@ class EditorWindowController(QObject):
     def run_code(self, task_type):
         """Runs the Scheme code for a given task type."""
         self.view.clear_error_output()  # Clear errors
-        if task_type == "simple":
-            script = self.query_builder.build_simple_query(self.model._data)
-        elif task_type == "allTests":
-            script = self.query_builder.build_all_tests_query(self.model._data)
-            self._all_tests_task_id = None  # Reset before potentially setting.
-        elif task_type.startswith("test"):
-            index = int(task_type[4:]) - 1
-            script = self.query_builder.build_test_query(
-                self.model._data, index + 1
-            )  # Adjust for 1-based indexing
-        else:
-            warn(f"Invalid task type: {task_type}")
-            return
 
-        if script:
-            self._current_task_type = task_type
-            script_path = os.path.join(TMP_DIR, f"{task_type}.scm")
-            debug(f"Writing script to {script_path}:")
-            with open(script_path, "w") as f:
-                f.write(script)
-            task_id = self.execution_service.execute_scheme(script_path, task_type)
-            if task_type == "allTests":
-                self._all_tests_task_id = task_id
-        # No else needed.  If !script, it's handled by error callbacks.
+        try:
+            if task_type == "simple":
+                script = self.query_builder.build_query(
+                    SchemeQueryType.SIMPLE, self.model._data
+                )
+            elif task_type == "allTests":
+                script = self.query_builder.build_query(
+                    SchemeQueryType.ALL_TESTS, self.model._data
+                )
+                self._all_tests_task_id = None  # Reset before potentially setting
+            elif task_type.startswith("test"):
+                index = int(task_type[4:])  # Extract test number
+                script = self.query_builder.build_query(
+                    SchemeQueryType.TEST, (self.model._data, index)
+                )
+            else:
+                warn(f"Invalid task type: {task_type}")
+                return
+
+            if script:
+                self._current_task_type = task_type
+                script_path = os.path.join(TMP_DIR, f"{task_type}.scm")
+                debug(f"Writing script to {script_path}")
+                with open(script_path, "w") as f:
+                    f.write(script)
+                task_id = self.execution_service.execute_scheme(script_path, task_type)
+                if task_type == "allTests":
+                    self._all_tests_task_id = task_id
+
+        except Exception as e:
+            warn(f"Error building/running query: {e}")
+            self.view.update_ui("error_output", str(e))
 
     def setup_connections(self):
         self.model.definitionTextChanged.connect(

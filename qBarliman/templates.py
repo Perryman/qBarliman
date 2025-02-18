@@ -5,14 +5,15 @@ from qBarliman.constants import (
     ALLTESTS_STRING_2,
     EVAL_FLAGS_COMPLETE,
     EVAL_FLAGS_FAST,
-    EVAL_STRING_COMPLETE,
-    EVAL_STRING_FAST,
     EVAL_STRING_1,
     EVAL_STRING_2,
+    EVAL_STRING_COMPLETE,
+    EVAL_STRING_FAST,
+    INTERP_SCM,
     LOAD_MK_SCM,
     LOAD_MK_VICARE_SCM,
-    INTERP_SCM,
     info,
+    warn,
 )
 from qBarliman.utils.rainbowp import rainbowp
 
@@ -27,7 +28,7 @@ PARSE_ANS_STRING_T = Template(  # $name $defns $body
     """
 (define (parse-ans$name) (run 1 (q)
   (let ((g1 (gensym \"g1\")) (g2 (gensym \"g2\")) (g3 (gensym \"g3\")) (g4 (gensym \"g4\")) (g5 (gensym \"g5\")) (g6 (gensym \"g6\")) (g7 (gensym \"g7\")) (g8 (gensym \"g8\")) (g9 (gensym \"g9\")) (g10 (gensym \"g10\")) (g11 (gensym \"g11\")) (g12 (gensym \"g12\")) (g13 (gensym \"g13\")) (g14 (gensym \"g14\")) (g15 (gensym \"g15\")) (g16 (gensym \"g16\")) (g17 (gensym \"g17\")) (g18 (gensym \"g18\")) (g19 (gensym \"g19\")) (g20 (gensym \"g20\")))
-  (fresh (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z _) (parseo `(begin $defns $body))))))"
+  (fresh (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z _) (parseo `(begin $defns $body))))))
 """
 )
 
@@ -35,7 +36,7 @@ PARSE_WITH_FAKE_DEFNS_ANS_STRING_T = Template(  # $name $defns $body
     """
 (define (parse-ans$name) (run 1 (q)
   (let ((g1 (gensym \"g1\")) (g2 (gensym \"g2\")) (g3 (gensym \"g3\")) (g4 (gensym \"g4\")) (g5 (gensym \"g5\")) (g6 (gensym \"g6\")) (g7 (gensym \"g7\")) (g8 (gensym \"g8\")) (g9 (gensym \"g9\")) (g10 (gensym \"g10\")) (g11 (gensym \"g11\")) (g12 (gensym \"g12\")) (g13 (gensym \"g13\")) (g14 (gensym \"g14\")) (g15 (gensym \"g15\")) (g16 (gensym \"g16\")) (g17 (gensym \"g17\")) (g18 (gensym \"g18\")) (g19 (gensym \"g19\")) (g20 (gensym \"g20\")))
-  (fresh (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z _) (fresh (names dummy-expr) (extract-nameso `( $defns ) names) (parseo `((lambda ,names $body) ,dummy-expr)))))))"
+  (fresh (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z _) (fresh (names dummy-expr) (extract-nameso `( $defns ) names) (parseo `((lambda ,names $body) ,dummy-expr)))))))
 """
 )
 
@@ -78,23 +79,21 @@ DEFINE_ANS_STRING_T = Template(
     """
 )
 
-# full_string
-# $defns $body $expected_out $query_type $name $parse_ans_scm
+# $defns $body $expected_out $query_type $name
 MAKE_QUERY_STRING_T = Template(  # $defns $body $expected_out $name
-    f"""
+    """
 ;; $query_type query
 
 
-$parse_ans_scm
+$parse_ans
 
 
-{DEFINE_ANS_STRING_T.safe_substitute()}
+$define_ans
 
 
 """
 )  # full_string
 ##########
-
 
 ##### func makeAllTestsQueryString
 ##### ARGS: $defns $body $expected_out $simple_query $name
@@ -126,15 +125,36 @@ MAKE_QUERY_SIMPLE_FOR_MONDO_SCHEME_T = Template(
 {LOAD_MK_SCM}
 {INTERP_SCM}
 {MAKE_QUERY_STRING_T.safe_substitute( \
+    name="-simple", \
     body=",_", expected_out="q", query_type="simple", \
-    parse_ans_scm=PARSE_ANS_STRING_T.safe_substitute(), \
-    name="-simple", )}
+    parse_ans=PARSE_ANS_STRING_T.safe_substitute(), \
+    define_ans="")}
 """
 )
-info(rainbowp(MAKE_QUERY_SIMPLE_FOR_MONDO_SCHEME_T.safe_substitute()))
 ##########
 
 
+##### func makeNewTestNQueryString
+##### ARGS: $loadFileString $actualQueryFilePath $n $new_test_query_template_string
+##### $localSimpleQueryForMondoSchemeFilePath
+LOAD_FILE_STRING_T = Template(
+    """
+(define simple-query-for-mondo-file-path \"$localSimpleQueryForMondoSchemeFilePath\")
+"""
+)
+
+MAKE_NEW_TEST_N_QUERY_STRING_T = Template(
+    f"""
+{LOAD_FILE_STRING_T.safe_substitute()}
+
+(define actual-query-file-path \"$actualQueryFilePath\")
+
+(define (test-query-fn) (query-val-test$n))
+
+
+$new_test_query_template_string
+"""
+)
 ##########
 
 
@@ -142,7 +162,7 @@ SIMPLE_QUERY_T = Template(
     """
 $load_mk_vicare
 $load_mk
-$interp_SCM
+$interp_scm
 $query_simple
 """
 )
@@ -186,7 +206,7 @@ QUERY_SIMPLE_T = Template(
     """
 $load_mk_vicare
 $load_mk
-$interp_SCM_string
+$interp_scm_string
 $query_simple
 """
 )
@@ -218,3 +238,13 @@ PARSE_FAKE_DEFNS_ANS_T = Template(
 (fresh (names dummy-expr) (extract-nameso `( $defns ) names) (parseo `((lambda ,names $body) ,dummy-expr)))))))
 """
 )
+
+
+def unroll(tmpl: Template, subs: dict, iters: int = 5, res: str = "") -> str:
+    if iters <= 0:
+        raise ValueError("Max template unrolling iterations exceeded")
+    curr = tmpl.safe_substitute(**subs)
+    if curr == res and "$" in curr:
+        warn("Possibly incomplete template! Ensure these are all from the rel-interp and not templates.py or constants.py")
+        warn(f"{[s for s in res.split() if "$" in s]}")
+    return curr if curr == res else unroll(Template(curr), subs, iters - 1, curr)
