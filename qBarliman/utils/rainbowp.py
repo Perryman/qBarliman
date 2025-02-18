@@ -1,29 +1,46 @@
-from enum import Enum
+# There's probably a library or builtin for this but this is more fun.
+def esc(c, s) -> str:
+    return f"\033[{c}m{s}\033[0m"
 
-T_BLACK = "\033[30m"
-T_RED = "\033[1;31m"
-T_GREEN = "\033[32m"
-T_YELLOW = "\033[33m"
-T_BLUE = "\033[34m"
-T_MAGENTA = "\033[35m"
-T_CYAN = "\033[36m"
-T_WHITE = "\033[37m"
 
-T_BRIGHT_BLACK = "\033[90m"
-T_BRIGHT_RED = "\033[1;91m"
-T_BRIGHT_GREEN = "\033[92m"
-T_BRIGHT_YELLOW = "\033[93m"
-T_BRIGHT_BLUE = "\033[94m"
-T_BRIGHT_MAGENTA = "\033[95m"
-T_BRIGHT_CYAN = "\033[96m"
-T_BRIGHT_WHITE = "\033[97m"
+def cmp(*args) -> str:
+    return ";".join(map(str, args))
 
-T_RESET = "\033[0m"  # Reset ANSI code
+
+def col(s, *args) -> str:
+    return esc(cmp(*args), str(s))
+
+
+T_RESET = 0
+T_BOLD = 1
+T_BRIGHT = 1
+T_REVERSE = 7
+T_FRAMED = 51
+T_ENCIRCLED = 52
+
+T_BLACK = 30
+T_RED = 31
+T_GREEN = 32
+T_YELLOW = 33
+T_BLUE = 34
+T_MAGENTA = 35
+T_CYAN = 36
+T_WHITE = 37
+
+# aixterm bright fg
+T_BRIGHT_BLACK = 90
+T_BRIGHT_RED = 91
+T_BRIGHT_GREEN = 92
+T_BRIGHT_YELLOW = 93
+T_BRIGHT_BLUE = 94
+T_BRIGHT_MAGENTA = 95
+T_BRIGHT_CYAN = 96
+T_BRIGHT_WHITE = 97
 
 
 # Terminal version (ANSI escape codes):
 def rainbowp(text):
-    COLORS = [
+    PCOLORS = [
         T_WHITE,
         T_GREEN,
         T_YELLOW,
@@ -43,17 +60,19 @@ def rainbowp(text):
     output = ""
     for char in text:
         if char in "([{":
-            color = COLORS[color_index % len(COLORS)]
-            output += color + char + T_RESET
+            color = PCOLORS[color_index % len(PCOLORS)]
+            output += col(char, color)
             color_index += 1
             total_count += 1
         elif char in ")]}":
             if color_index > 0:
                 color_index -= 1
-                color = COLORS[color_index % len(COLORS)]
-                output += color + char + T_RESET
+                color = PCOLORS[color_index % len(PCOLORS)]
+                output += col(char, color)
             else:
-                output += T_RED + char + T_RESET  # unmatched
+                output += col(char, T_BRIGHT_RED)  # unmatched
+        elif char in "$":
+            output += col(char, T_BRIGHT_RED, T_REVERSE)
         else:
             output += char
 

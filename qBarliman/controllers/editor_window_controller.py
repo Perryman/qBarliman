@@ -56,47 +56,27 @@ class EditorWindowController(QObject):
         self._current_task_type = None
         self._all_tests_task_id = None
 
-        # Declarative UI update mappings: TaskResult -> UI Action
-        self._ui_actions = {
-            ("simple", TaskStatus.SUCCESS): lambda r: (
+        self._updaters = {
+            "def_pass": lambda r: (
                 self.view.update_ui("definition_status", (r.message, r.status)),
             ),
-            ("simple", TaskStatus.SYNTAX_ERROR): lambda r: (
-                self.view.update_ui("definition_status", (r.message, r.status)),
-                self.maybe_kill_alltests(),
-            ),
-            ("simple", TaskStatus.PARSE_ERROR): lambda r: (
+            "def_fail": lambda r: (
                 self.view.update_ui("definition_status", (r.message, r.status)),
                 self.maybe_kill_alltests(),
             ),
-            ("simple", TaskStatus.EVALUATION_FAILED): lambda r: (
-                self.view.update_ui("definition_status", (r.message, r.status)),
-                self.maybe_kill_alltests(),
-            ),
-            ("simple", TaskStatus.FAILED): lambda r: (
-                self.view.update_ui("definition_status", (r.message, r.status)),
-                self.maybe_kill_alltests(),
-            ),
-            ("allTests", TaskStatus.SUCCESS): lambda r: (
+            "best_guess_pass": lambda r: (
                 self.view.update_ui("best_guess", r.output),
                 self.view.update_ui(
                     "best_guess_status",
                     (f"{r.elapsed_time:.2f}s", r.status),
                 ),
             ),
-            ("allTests", TaskStatus.FAILED): lambda r: (
-                self.view.update_ui("best_guess", ""),
+            "best_guess_fail": lambda r: (
                 self.view.update_ui(
-                    "best_guess_status", (f"Failed {r.elapsed_time:.2f}s", r.status)
+                    "best_guess_status", (f"{r.elapsed_time:.2f}s", r.status)
                 ),
             ),
-            ("allTests", TaskStatus.SYNTAX_ERROR): lambda r: (
-                self.view.update_ui(
-                    "best_guess_status", (f"Failed {r.elapsed_time:.2f}s", r.status)
-                ),
-            ),
-            # Use a generic "test" prefix for individual tests
-            ("test", TaskStatus.SUCCESS): lambda r: (
+            "test_pass": lambda r: (
                 self.view.update_ui(
                     "test_status",
                     (
@@ -106,28 +86,34 @@ class EditorWindowController(QObject):
                     ),
                 ),
             ),
-            ("test", TaskStatus.FAILED): lambda r: (
-                self.view.update_ui(
-                    "test_status",
-                    (
-                        int(r.task_type[4:]) - 1,
-                        (
-                            f"Failed {r.elapsed_time:.2f}s"
-                            if r.elapsed_time is not None
-                            else "Failed"
-                        ),
-                        r.status,
-                    ),
-                ),
-                self.maybe_kill_alltests(),
-            ),
-            ("test", TaskStatus.SYNTAX_ERROR): lambda r: (
+            "test_fail": lambda r: (
                 self.view.update_ui(
                     "test_status", (int(r.task_type[4:]) - 1, r.message, r.status)
                 ),
                 self.maybe_kill_alltests(),
             ),
         }
+
+        self._test_updaters = {
+            "simple": {"pass": "def_pass", "fail": "def_fail"},
+            "test": {"pass": "test_pass", "fail": "test_fail"},
+            "allTests": {"pass": "best_guess_pass", "fail": "best_guess_fail"},
+        }
+        self._ui_actions = {}
+        # Declarative UI update mappings: TaskResult -> UI Action
+        for test, update in self._test_updaters.items():
+            for status in TaskStatus:
+                match status:
+                    case TaskStatus.SUCCESS:
+                        self._ui_actions[(test, status)] = self._updaters[
+                            update["pass"]
+                        ]
+                    case TaskStatus.THINKING:
+                        pass
+                    case _:
+                        self._ui_actions[(test, status)] = self._updaters[
+                            update["fail"]
+                        ]
 
         # Set up signals and UI
         self.setup_connections()
@@ -192,7 +178,7 @@ class EditorWindowController(QObject):
     def run_code(self, task_type):
         """Runs the Scheme code for a given task type."""
         self.view.clear_error_output()  # Clear errors
-
+        debug(f"Running code for task type: {task_type}")
         try:
             if task_type == "simple":
                 script = self.query_builder.build_query(
@@ -279,6 +265,11 @@ class EditorWindowController(QObject):
         # First, try to get a specific action for the (task_type, status)
         action = self._ui_actions.get((result.task_type, result.status))
 
+        if action is None:
+            warn(
+                f"Action not found, task type: {result.task_type} status: {result.status}"
+            )
+
         # If not found, try to get a generic action for "test" prefix
         if action is None and result.task_type.startswith("test"):
             action = self._ui_actions.get(("test", result.status))
@@ -286,6 +277,7 @@ class EditorWindowController(QObject):
         # If still not found, do nothing
         if action is not None:
             action(result)  # Execute the UI update action
+            # debug(f"Action code: {action.__code__}")
 
         if result.status != TaskStatus.SUCCESS:
             self.view.update_ui("error_output", result.output)

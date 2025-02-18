@@ -7,16 +7,16 @@ from qBarliman.constants import LOAD_MK_SCM, LOAD_MK_VICARE_SCM, debug
 from qBarliman.models.scheme_document_data import SchemeDocumentData
 from qBarliman.templates import (
     ALL_TEST_WRITE_T,
+    MAKE_NEW_TEST_N_QUERY_STRING_T,
+    MAKE_QUERY_SIMPLE_FOR_MONDO_SCHEME_T,
     MAKE_QUERY_STRING_T,
     PARSE_ANS_STRING_T,
-    MAKE_QUERY_SIMPLE_FOR_MONDO_SCHEME_T,
-    MAKE_NEW_TEST_N_QUERY_STRING_T,
+    unroll,
 )
 from qBarliman.utils.load_interpreter import (
     load_interpreter_code,
 )
 from qBarliman.utils.rainbowp import rainbowp
-from qBarliman.templates import unroll
 
 
 class SchemeQueryType(Enum):
@@ -58,7 +58,7 @@ class TestQueryStrategy(BaseQueryStrategy, QueryStrategy):
         subs = {
             "name": f"-{test_number}",
             "loadFileString": "loadFileString",
-            "actualQueryFilePath": document_data.path,
+            # Remove actualQueryFilePath dependency
             "n": test_number,
             "new_test_query_template_string": MAKE_QUERY_STRING_T.template,
             "defns": document_data.definition_text,
@@ -73,12 +73,19 @@ class TestQueryStrategy(BaseQueryStrategy, QueryStrategy):
 
 class AllTestsQueryStrategy(BaseQueryStrategy, QueryStrategy):
     def build_query(self, document_data: SchemeDocumentData) -> str:
-        all_test_inputs = " ".join(
-            [self._format_scheme_value(x) for x in document_data.test_inputs]
-        )
-        all_test_outputs = " ".join(
-            [self._format_scheme_value(x) for x in document_data.test_expected]
-        )
+        # Filter out empty test cases and create pairs
+        test_pairs = [
+            (i, o)
+            for i, o in zip(document_data.test_inputs, document_data.test_expected)
+            if i.strip() and o.strip()
+        ]
+
+        for idx, (input_val, output_val) in enumerate(test_pairs):
+            debug(f"all_test_inputs #{idx}: {rainbowp(input_val)}")
+            debug(f"all_test_outputs #{idx}: {rainbowp(output_val)}")
+
+        all_test_inputs = [pair[0] for pair in test_pairs]
+        all_test_outputs = [pair[1] for pair in test_pairs]
 
         subs = {
             "load_mk_vicare": LOAD_MK_VICARE_SCM,
@@ -90,21 +97,14 @@ class AllTestsQueryStrategy(BaseQueryStrategy, QueryStrategy):
             "expectedOut": "q",
             "eval_string_fast": PARSE_ANS_STRING_T.template,
             "all_tests_query": ALL_TEST_WRITE_T.template,
-            "all_test_inputs": all_test_inputs,
-            "all_test_outputs": all_test_outputs,
+            "all_test_inputs": " ".join(all_test_inputs),
+            "all_test_outputs": " ".join(all_test_outputs),
             "definitionText": document_data.definition_text,
-            "allTestInputs": all_test_inputs,
-            "allTestOutputs": all_test_outputs,
         }
 
         res = unroll(ALL_TEST_WRITE_T, subs)
         debug(f"All tests query strategy:\n{rainbowp(res)}")
         return res
-
-    def _format_scheme_value(self, value: str) -> str:
-        if not value.strip():
-            return "'()"
-        return f"{value}"
 
 
 class QueryBuilder(QObject):

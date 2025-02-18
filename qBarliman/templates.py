@@ -12,7 +12,6 @@ from qBarliman.constants import (
     INTERP_SCM,
     LOAD_MK_SCM,
     LOAD_MK_VICARE_SCM,
-    info,
     warn,
 )
 from qBarliman.utils.rainbowp import rainbowp
@@ -107,7 +106,7 @@ ALL_TEST_WRITE_T = Template(
     (== `( $definitionText ) defn-list)
 
     {ALLTESTS_STRING_2}
-        (== `( $definitionText ) defns) (appendo defns `(((lambda x x) $allTestInputs)) begin-body) (evalo `(begin . ,begin-body) (list $allTestOutputs))))))
+        (== `( $definitionText ) defns) (appendo defns `(((lambda x x) $all_test_inputs)) begin-body) (evalo `(begin . ,begin-body) (list $all_test_outputs))))))
 (let ((results-fast {EVAL_STRING_FAST}))
   (if (null? results-fast)
     {EVAL_STRING_COMPLETE}
@@ -184,8 +183,8 @@ ALL_TEST_WRITE_T = Template(
     (== `( $definitionText ) defn-list)
 
     
-        {{ALLTESTS_STRING_2}}
-        (== `( $definitionText ) defns) (appendo defns `(((lambda x x) $allTestInputs)) begin-body) (evalo `(begin . ,begin-body) (list $allTestOutputs) )))))
+        {ALLTESTS_STRING_2}
+        (== `( $definitionText ) defns) (appendo defns `(((lambda x x) $all_test_inputs)) begin-body) (evalo `(begin . ,begin-body) (list $all_test_outputs) )))))
 (let ((results-fast {EVAL_STRING_FAST}))
   (if (null? results-fast)
     {EVAL_STRING_COMPLETE}
@@ -246,5 +245,9 @@ def unroll(tmpl: Template, subs: dict, iters: int = 5, res: str = "") -> str:
     curr = tmpl.safe_substitute(**subs)
     if curr == res and "$" in curr:
         warn("Possibly incomplete template! Ensure these are all from the rel-interp and not templates.py or constants.py")
-        warn(f"{[s for s in res.split() if "$" in s]}")
+        d = [s for s in curr.split() if "$" in s]
+        for s in d:
+            print(rainbowp(s), end=", ")
+        print()
+
     return curr if curr == res else unroll(Template(curr), subs, iters - 1, curr)
