@@ -246,9 +246,7 @@ def unroll(tmpl: Template, subs: dict, iters: int = 5, res: str = "") -> str:
         raise ValueError("Max template unrolling iterations exceeded")
     curr = tmpl.safe_substitute(**subs)
     if curr == res and "$" in curr:
-        if d := [
-            s for s in curr.split() if "$" in s and s not in not_template
-        ]:
+        if d := [s for s in curr.split() if "$" in s and s not in not_template]:
             l.warn("Possibly incomplete template!")
             for s in d:
                 print(rainbowp(s), end=", ")
