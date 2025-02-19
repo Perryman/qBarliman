@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional, Protocol
 
 from PySide6.QtCore import QObject, Signal
 
-from qBarliman.constants import LOAD_MK_SCM, LOAD_MK_VICARE_SCM, debug
+from qBarliman.constants import LOAD_MK_SCM, LOAD_MK_VICARE_SCM
 from qBarliman.models.scheme_document_data import SchemeDocumentData
 from qBarliman.templates import (
     ALL_TEST_WRITE_T,
@@ -13,6 +13,7 @@ from qBarliman.templates import (
     PARSE_ANS_STRING_T,
     unroll,
 )
+from qBarliman.utils import log as l
 from qBarliman.utils.load_interpreter import (
     load_interpreter_code,
 )
@@ -48,7 +49,7 @@ class SimpleQueryStrategy(BaseQueryStrategy, QueryStrategy):
             "eval_string_fast": PARSE_ANS_STRING_T.template,
         }
         res = unroll(MAKE_QUERY_SIMPLE_FOR_MONDO_SCHEME_T, subs)
-        # debug(f"Simple query strategy:\n{rainbowp(res)}")
+        # l.debug(f"Simple query strategy:\n{rainbowp(res)}")
         return res
 
 
@@ -67,7 +68,7 @@ class TestQueryStrategy(BaseQueryStrategy, QueryStrategy):
             "eval_string_fast": PARSE_ANS_STRING_T.template,
         }
         res = unroll(MAKE_NEW_TEST_N_QUERY_STRING_T, subs)
-        debug(f"Test query strategy:\n{rainbowp(res)}")
+        l.debug(f"Test query strategy:\n{rainbowp(res)}")
         return res
 
 
@@ -81,8 +82,8 @@ class AllTestsQueryStrategy(BaseQueryStrategy, QueryStrategy):
         ]
 
         for idx, (input_val, output_val) in enumerate(test_pairs):
-            debug(f"all_test_inputs #{idx}: {rainbowp(input_val)}")
-            debug(f"all_test_outputs #{idx}: {rainbowp(output_val)}")
+            l.debug(f"all_test_inputs #{idx}: {rainbowp(input_val)}")
+            l.debug(f"all_test_outputs #{idx}: {rainbowp(output_val)}")
 
         all_test_inputs = [pair[0] for pair in test_pairs]
         all_test_outputs = [pair[1] for pair in test_pairs]
@@ -103,7 +104,7 @@ class AllTestsQueryStrategy(BaseQueryStrategy, QueryStrategy):
         }
 
         res = unroll(ALL_TEST_WRITE_T, subs)
-        debug(f"All tests query strategy:\n{rainbowp(res)}")
+        l.debug(f"All tests query strategy:\n{rainbowp(res)}")
         return res
 
 
@@ -129,7 +130,7 @@ class QueryBuilder(QObject):
         }
 
     def build_query(self, query_type: SchemeQueryType, data: Any) -> str:
-        debug(f"Building query of type {query_type}")
+        l.debug(f"Building query of type {query_type}")
         strategy = self._strategies.get(query_type)
         if not strategy:
             raise ValueError(f"Unknown query type: {query_type}")

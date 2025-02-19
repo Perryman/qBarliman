@@ -1,6 +1,8 @@
-from qBarliman.constants import warn, good, CORE_FULLPATH
 import os
 from typing import List
+
+from qBarliman.constants import CORE_FULLPATH
+from qBarliman.utils import log as l
 
 
 def load_interpreter_code(CORE_FULLPATH: List[str] = CORE_FULLPATH) -> str:
@@ -10,14 +12,14 @@ def load_interpreter_code(CORE_FULLPATH: List[str] = CORE_FULLPATH) -> str:
         # Load core miniKanren files
         for path in CORE_FULLPATH:
             if not os.path.exists(path):
-                warn(f"Error: Could not find {path}")
+                l.warn(f"Error: Could not find {path}")
                 return ""
             with open(path, "r") as f:
                 code += f.read() + "\n"
-                good(f"Loaded {path}")
+                l.good(f"Loaded {path}")
 
         return code
 
     except Exception as e:
-        warn(f"Error loading interpreter code: {e}")
+        l.warn(f"Error loading interpreter code: {e}")
         return ""

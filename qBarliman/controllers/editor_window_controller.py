@@ -3,12 +3,8 @@ import os
 from PySide6.QtCore import QObject, QTimer, Slot
 from PySide6.QtWidgets import QMainWindow
 
-from qBarliman.constants import (
-    TMP_DIR,
-    debug,
-    info,
-    warn,
-)
+import qBarliman.utils.log as l
+from qBarliman.constants import TMP_DIR
 from qBarliman.models.scheme_document import SchemeDocument
 from qBarliman.operations.scheme_execution_service import (
     SchemeExecutionService,
@@ -39,7 +35,7 @@ class EditorWindowController(QObject):
             load_interpreter_code()
         )  # Default + load_interpreter_code moved
 
-        info("Initialized EditorWindowController")
+        l.info("Initialized EditorWindowController")
 
         # Use injected ExecutionService or create a default one if not provided
         self.execution_service = execution_service or SchemeExecutionService()
@@ -124,6 +120,7 @@ class EditorWindowController(QObject):
         new_data = self.model._data
         # Definition text change -> simple check
         if new_data.definition_text != old_data.definition_text:
+            self.maybe_kill_alltests()  # Cancel previous tests
             self._schedule_run_code("simple")
             # Schedule test1-n
             for i in range(1, len(new_data.test_inputs) + 1):
@@ -154,7 +151,7 @@ class EditorWindowController(QObject):
     def run_code(self, task_type):
         """Runs the Scheme code for a given task type."""
         self.view.clear_error_output()  # Clear errors
-        debug(f"Running code for task type: {task_type}")
+        l.info(f"Running code for task type: {task_type}")
         try:
             if task_type == "simple":
                 script = self.query_builder.build_query(
@@ -171,13 +168,13 @@ class EditorWindowController(QObject):
                     SchemeQueryType.TEST, (self.model._data, index)
                 )
             else:
-                warn(f"Invalid task type: {task_type}")
+                l.warn(f"Invalid task type: {task_type}")
                 return
 
             if script:
                 self._current_task_type = task_type
                 script_path = os.path.join(TMP_DIR, f"{task_type}.scm")
-                debug(f"Writing script to {script_path}")
+                l.info(f"Writing script to {script_path}")
                 with open(script_path, "w") as f:
                     f.write(script)
                 task_id = self.execution_service.execute_scheme(script_path, task_type)
@@ -185,7 +182,7 @@ class EditorWindowController(QObject):
                     self._all_tests_task_id = task_id
 
         except Exception as e:
-            warn(f"Error building/running query: {e}")
+            l.warn(f"Error building/running query: {e}")
             self.view.update_ui("error_output", str(e))
 
     def setup_connections(self):
@@ -229,7 +226,7 @@ class EditorWindowController(QObject):
         cfg = self._config.get(task)
 
         if not cfg:
-            warn(f"No config for task: {result.task_type}")
+            l.warn(f"No config for task: {result.task_type}")
             return
 
         upd = cfg["update"]
@@ -256,5 +253,5 @@ class EditorWindowController(QObject):
     @Slot(TaskResult)
     def _handle_task_result(self, result: TaskResult):
         """Handles the TaskResult and updates the UI."""
-        debug(f"Task result received: {result}")
+        l.info(f"Task result received: {result}")
         self.execute_config(result)

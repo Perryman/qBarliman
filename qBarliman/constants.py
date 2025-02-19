@@ -5,35 +5,7 @@ import sys
 import tempfile
 from typing import Optional
 
-## Temporary flags
-VERBOSE = 3
-WARN = "❌‼️‼️"  # 0
-GOOD = "✅"  # 1
-INFO = "✏️"  # 2
-DEBUG = "🐞"  # 3
-# Avoid unnecessary coloring when redirecting to file
-USE_COLORS = sys.stdout.isatty()
-
-
-def warn(*args) -> None:
-    if VERBOSE >= 0:
-        print(f"\033[33m{WARN}\033[0m" if USE_COLORS else WARN, *args)
-
-
-def good(*args) -> None:
-    if VERBOSE >= 1:
-        print(f"\033[32m{GOOD}\033[0m" if USE_COLORS else GOOD, *args)
-
-
-def info(*args) -> None:
-    if VERBOSE >= 2:
-        print(f"\033[37m{INFO}\033[0m" if USE_COLORS else INFO, *args)
-
-
-def debug(*args) -> None:
-    if VERBOSE >= 3:
-        print(f"\033[36m{DEBUG}\033[0m" if USE_COLORS else DEBUG, *args)
-
+from qBarliman.utils import log as l
 
 # Query string (QS) file names
 
@@ -107,12 +79,12 @@ def find_scheme_executable() -> Optional[str]:
 
 SCHEME_EXECUTABLE = find_scheme_executable()
 if not SCHEME_EXECUTABLE:
-    warn(
+    l.warn(
         f"Could not find Scheme executable in PATH. Looked for: {', '.join(['scheme', 'chez', 'chezscheme'])}"
     )
     sys.exit(1)
 else:
-    good(f"Found Scheme executable: {SCHEME_EXECUTABLE}")
+    l.good(f"Found Scheme executable: {SCHEME_EXECUTABLE}")
 
 # Load query strings from files
 
@@ -121,10 +93,10 @@ def load_safe(file_path: str) -> str:
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
-            good(f"loaded {file_path}")
+            l.good(f"loaded {file_path}")
             return content
     except Exception as e:
-        warn(f"LOAD_ERROR -- reading {file_path}: {e}")
+        l.warn(f"LOAD_ERROR -- reading {file_path}: {e}")
         return ""
 
 

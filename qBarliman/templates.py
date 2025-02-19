@@ -12,8 +12,8 @@ from qBarliman.constants import (
     INTERP_SCM,
     LOAD_MK_SCM,
     LOAD_MK_VICARE_SCM,
-    warn,
 )
+from qBarliman.utils import log as l
 from qBarliman.utils.rainbowp import rainbowp
 
 """
@@ -244,7 +244,9 @@ def unroll(tmpl: Template, subs: dict, iters: int = 5, res: str = "") -> str:
         raise ValueError("Max template unrolling iterations exceeded")
     curr = tmpl.safe_substitute(**subs)
     if curr == res and "$" in curr:
-        warn("Possibly incomplete template! Ensure these are all from the rel-interp and not templates.py or constants.py")
+        l.warn(
+            "Possibly incomplete template! Ensure these are all from the rel-interp and not templates.py or constants.py"
+        )
         d = [s for s in curr.split() if "$" in s]
         for s in d:
             print(rainbowp(s), end=", ")

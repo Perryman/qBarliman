@@ -6,8 +6,9 @@ from typing import Optional
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
-from qBarliman.constants import SCHEME_EXECUTABLE, debug, warn
+from qBarliman.constants import SCHEME_EXECUTABLE
 from qBarliman.operations.process_manager import ProcessManager
+from qBarliman.utils import log as l
 
 
 class TaskStatus(Enum):
@@ -50,7 +51,7 @@ class SchemeExecutionService(QObject):
 
     def execute_scheme(self, script_path: str, task_type: str):
         """Execute a Scheme script."""
-        debug(f"Execute: scheme --script {script_path}")
+        l.good(f"Execute: scheme --script {script_path}")
         if not os.path.exists(script_path):
             result = TaskResult(task_type, TaskStatus.FAILED, "Script file not found.")
             self.taskResultReady.emit(result)
@@ -80,15 +81,15 @@ class SchemeExecutionService(QObject):
         return pid
 
     def kill_process(self, pid=None):
-        debug(f"Kill process, pid={pid}")
+        l.debug(f"Kill process, pid={pid}")
         if pid is not None:
             try:
                 os.kill(pid, 15)  # SIGTERM
                 self._current_process_id = None  # Clear the ID
             except ProcessLookupError:
-                warn(f"Process with PID {pid} not found.")
+                l.warn(f"Process with PID {pid} not found.")
             except OSError as e:  # more general, catch permission errors etc
-                warn(f"Error killing process {pid}: {e}")
+                l.warn(f"Error killing process {pid}: {e}")
         # No else case
 
     def _handle_output(self, stdout: str, stderr: str):
@@ -97,7 +98,7 @@ class SchemeExecutionService(QObject):
             self._stdout_buffer += stdout
         if stderr:
             self._stderr_buffer += stderr
-        debug(f"Process output - stdout: {stdout}, stderr: {stderr}")
+        l.debug(f"Process output - stdout: {stdout}, stderr: {stderr}")
 
     def _handle_error(self, error: str):
         result = TaskResult(self._task_type, TaskStatus.FAILED, error)
@@ -106,9 +107,9 @@ class SchemeExecutionService(QObject):
     def _handle_finished(self, exit_code: int):
         elapsed_time = time.monotonic() - self.start_time
 
-        debug(f"Process finished with exit code {exit_code}")
-        debug(f"Final stdout: {self._stdout_buffer}")
-        debug(f"Final stderr: {self._stderr_buffer}")
+        l.debug(f"Process finished with exit code {exit_code}")
+        l.debug(f"Final stdout: {self._stdout_buffer}")
+        l.debug(f"Final stderr: {self._stderr_buffer}")
 
         result = self._process_output(self._stdout_buffer, self._task_type, exit_code)
         result.elapsed_time = elapsed_time

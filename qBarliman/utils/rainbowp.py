@@ -7,7 +7,8 @@ def cmp(*args) -> str:
     return ";".join(map(str, args))
 
 
-def col(s, *args) -> str:
+def col(s, *args) -> str:  # splat args in case of multiple codes
+    args = args[0] if len(args) == 1 and isinstance(args[0], (list, tuple)) else args
     return esc(cmp(*args), str(s))
 
 
@@ -41,7 +42,7 @@ T_BRIGHT_WHITE = 97
 # Terminal version (ANSI escape codes):
 def rainbowp(text):
     PCOLORS = [
-        T_WHITE,
+        (T_REVERSE, T_BRIGHT_WHITE),
         T_GREEN,
         T_YELLOW,
         T_BLUE,
