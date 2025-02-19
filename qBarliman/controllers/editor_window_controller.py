@@ -56,64 +56,47 @@ class EditorWindowController(QObject):
         self._current_task_type = None
         self._all_tests_task_id = None
 
-        self._updaters = {
-            "def_pass": lambda r: (
-                self.view.update_ui("definition_status", (r.message, r.status)),
-            ),
-            "def_fail": lambda r: (
-                self.view.update_ui("definition_status", (r.message, r.status)),
-                self.maybe_kill_alltests(),
-            ),
-            "best_guess_pass": lambda r: (
-                self.view.update_ui("best_guess", r.output),
-                self.view.update_ui(
-                    "best_guess_status",
-                    (f"{r.elapsed_time:.2f}s", r.status),
-                ),
-            ),
-            "best_guess_fail": lambda r: (
-                self.view.update_ui(
-                    "best_guess_status", (f"{r.elapsed_time:.2f}s", r.status)
-                ),
-            ),
-            "test_pass": lambda r: (
-                self.view.update_ui(
-                    "test_status",
+        self._config = {
+            "simple": {
+                "update": ("definition_status", lambda r: (r.message, r.status)),
+                "kill": {"pass": False, "fail": True},
+            },
+            "allTests": {
+                "update": [
+                    ("best_guess", lambda r: r.output),
                     (
-                        int(r.task_type[4:]) - 1,
-                        f"{r.elapsed_time:.2f}s",
-                        r.status,
+                        "best_guess_status",
+                        lambda r: (f"{r.elapsed_time:.2f}s", r.status),
                     ),
-                ),
-            ),
-            "test_fail": lambda r: (
-                self.view.update_ui(
-                    "test_status", (int(r.task_type[4:]) - 1, r.message, r.status)
-                ),
-                self.maybe_kill_alltests(),
-            ),
+                ],
+                "kill": {"pass": False, "fail": False},
+            },
+            "test": {
+                "update": {
+                    "pass": (
+                        "test_status",
+                        lambda r: (
+                            int(r.task_type[4:]) - 1,
+                            f"{r.elapsed_time:.2f}s",
+                            r.status,
+                        ),
+                    ),
+                    "fail": (
+                        "test_status",
+                        lambda r: (
+                            int(r.task_type[4:]) - 1,
+                            (
+                                f"Failed {r.elapsed_time:.2f}s"
+                                if r.elapsed_time is not None
+                                else "Failed"
+                            ),
+                            r.status,
+                        ),
+                    ),
+                },
+                "kill": {"pass": False, "fail": True},
+            },
         }
-
-        self._test_updaters = {
-            "simple": {"pass": "def_pass", "fail": "def_fail"},
-            "test": {"pass": "test_pass", "fail": "test_fail"},
-            "allTests": {"pass": "best_guess_pass", "fail": "best_guess_fail"},
-        }
-        self._ui_actions = {}
-        # Declarative UI update mappings: TaskResult -> UI Action
-        for test, update in self._test_updaters.items():
-            for status in TaskStatus:
-                match status:
-                    case TaskStatus.SUCCESS:
-                        self._ui_actions[(test, status)] = self._updaters[
-                            update["pass"]
-                        ]
-                    case TaskStatus.THINKING:
-                        pass
-                    case _:
-                        self._ui_actions[(test, status)] = self._updaters[
-                            update["fail"]
-                        ]
 
         # Set up signals and UI
         self.setup_connections()
@@ -135,32 +118,25 @@ class EditorWindowController(QObject):
         self.view.reset_test_ui()
 
     def update_model(self, updater):
-        """Applies an updater function to the model."""
+        """Applies an updater function to the model and schedules necessary tasks."""
         old_data = self.model._data
         updater(self.model)
         new_data = self.model._data
-
+        # Definition text change -> simple check
         if new_data.definition_text != old_data.definition_text:
             self._schedule_run_code("simple")
+            # Schedule test1-n
+            for i in range(1, len(new_data.test_inputs) + 1):
+                self._schedule_run_code(f"test{i}")
+            # Schedule allTests
+            self._schedule_run_code("allTests")
 
-        if (
+    def _test_data_changed(self, old_data, new_data):
+        """Check if test inputs or expected outputs have changed."""
+        return (
             new_data.test_inputs != old_data.test_inputs
             or new_data.test_expected != old_data.test_expected
-        ):
-            if any(new_data.test_inputs) or any(new_data.test_expected):
-                self._schedule_run_code("allTests")
-            for i in range(len(new_data.test_inputs)):
-                if (
-                    i < len(old_data.test_inputs)
-                    and new_data.test_inputs[i] != old_data.test_inputs[i]
-                ) or (
-                    i < len(old_data.test_expected)
-                    and new_data.test_expected[i] != old_data.test_expected[i]
-                ):
-                    if (
-                        new_data.test_inputs[i] and new_data.test_expected[i]
-                    ):  # BOTH must be non-empty
-                        self._schedule_run_code(f"test{i + 1}")
+        )
 
     def _schedule_run_code(self, task_type):
         """Schedules a task, avoiding duplicates."""
@@ -246,6 +222,27 @@ class EditorWindowController(QObject):
         self.execution_service.taskResultReady.connect(self._handle_task_result)
         self.execution_service.processStarted.connect(self._handle_process_started)
 
+    def execute_config(self, result):
+        """Execute UI updates based on task configuration."""
+        task = "test" if result.task_type.startswith("test") else result.task_type
+        outcome = "pass" if result.status == TaskStatus.SUCCESS else "fail"
+        cfg = self._config.get(task)
+
+        if not cfg:
+            warn(f"No config for task: {result.task_type}")
+            return
+
+        upd = cfg["update"]
+        if isinstance(upd, dict):
+            upd = upd[outcome]
+        updates = upd if isinstance(upd, list) else [upd]
+
+        for element, formatter in updates:
+            self.view.update_ui(element, formatter(result))
+
+        if cfg["kill"][outcome]:
+            self.maybe_kill_alltests()
+
     @Slot(str)
     def _handle_process_started(self, task_type):
         if task_type == "simple":
@@ -260,24 +257,4 @@ class EditorWindowController(QObject):
     def _handle_task_result(self, result: TaskResult):
         """Handles the TaskResult and updates the UI."""
         debug(f"Task result received: {result}")
-
-        # --- Get UI update action based on task type and status ---
-        # First, try to get a specific action for the (task_type, status)
-        action = self._ui_actions.get((result.task_type, result.status))
-
-        if action is None:
-            warn(
-                f"Action not found, task type: {result.task_type} status: {result.status}"
-            )
-
-        # If not found, try to get a generic action for "test" prefix
-        if action is None and result.task_type.startswith("test"):
-            action = self._ui_actions.get(("test", result.status))
-
-        # If still not found, do nothing
-        if action is not None:
-            action(result)  # Execute the UI update action
-            # debug(f"Action code: {action.__code__}")
-
-        if result.status != TaskStatus.SUCCESS:
-            self.view.update_ui("error_output", result.output)
+        self.execute_config(result)
