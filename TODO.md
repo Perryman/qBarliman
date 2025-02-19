@@ -28,9 +28,9 @@
 
 - [ ] Review and update README.md once tests pass
 
-# original Barliman TODOs for review
+## original Barliman TODOs for review
 
-## TODO:
+## TODO
 
 - Matt Might suggests using properties like `(append (cons a l) s) == (cons a (append l s))` for synthesizing `append`.
 - Devon Zeugel suggests using a monospace font, and perhaps swapping the tests and the definitions in the main window. Devon suggests using the number of tests that pass to guide search for auto-repair or other synthesis. Or, to try to maximize the number of tests that pass, then have the user take over. Maybe use the number of tests that pass as a score/heuristic for stochastic search.
@@ -83,9 +83,9 @@
 - differential relational interpreters
 - use a meta-interpreter to let the programmer know the deepest part of the search path upon failure, to try to give a better hint as to what went wrong (thanks Nada! and halp! :))
 
-## LONGER TERM:
+## LONGER TERM
 
-- Devon Zeugel suggested looking at Mutant (https://github.com/mbj/mutant).
+- Devon Zeugel suggested looking at Mutant [https://github.com/mbj/mutant].
 - mousing over a failing test should highlight subexpressions in the Definitions pane that are incompatible with that test.
 - mousing over a subexpression should hilight any tests which would be incompatible with the definitions, were a logic variable to be substututed for the expression being moused over. (perhaps do this only if a modifier key is help down)
 - improve editor so that typing '(' 'cons' auto completes to '(cons ,A ,B)', based on arity of cons (unless cons is shadowed).
@@ -105,10 +105,10 @@
 - add abstract interpretation for miniKanren to speed up the synthesis
 - use stochastic/probabilistic extensions to miniKanren to improve synthesis capabilities. For example, see:
 
-Eric Schkufza, Rahul Sharma, and Alex Aiken. 2013. Stochastic superoptimization. In Proceedings of the eighteenth international conference on Architectural support for programming languages and operating systems (ASPLOS '13). ACM, New York, NY, USA, 305-316. DOI=http://dx.doi.org/10.1145/2451116.2451150
-https://cs.stanford.edu/people/sharmar/pubs/asplos291-schkufza.pdf
+Eric Schkufza, Rahul Sharma, and Alex Aiken. 2013. Stochastic superoptimization. In Proceedings of the eighteenth international conference on Architectural support for programming languages and operating systems (ASPLOS '13). ACM, New York, NY, USA, 305-316. DOI=[http://dx.doi.org/10.1145/2451116.2451150]
+[https://cs.stanford.edu/people/sharmar/pubs/asplos291-schkufza.pdf]
 
-## POSSIBLE USE CASES:
+## POSSIBLE USE CASES
 
 - write simple implementation of a function, generate test from that function, then use those tests to guide the more sophisticated implementation. Or more generally, continually test the partially-implemented function vs the fully implemented but perhaps less efficient function.
 
@@ -128,11 +128,11 @@ Have Barliman try removing each subexpression and then check if any of the tests
 
 Greg Rosenblatt's suggestion for auto-repair: "The user may also want to mark some regions of the code as suspect, which would prioritize the area searched for problematic sub-expressions. If the user is right, the fix could be found much sooner."
 
-## SUSPECT IDEAS:
+## SUSPECT IDEAS
 
 - could just call out to Scheme one the program becomes grounded. However, the semantics and even the grammar may not match that of the interpreter used by miniKanren, so this seems difficult or impossible to do properly. However, could call a (non-relational) interpreter for miniScheme.
 
-## INTERESTING IDEAS:
+## INTERESTING IDEAS
 
 - Tom Gilray suggests using a simplified intermediate representation (IR) that disallows shadowing, has `if` but not `cond`, etc. Could have the IR be the macro expanded code. Could possibly reverse engineer/infer macro calls that could have produced the IR.
 - Tom Gilray suggests changing the interface to just have a single editor window, which allows for definitions and for test calls/results. I suspect this is the right way to go, although it will involve significant changes to Barliman. Tom also suggests having arrows to the right of each logic variable, showing the current value of each variable.
@@ -140,14 +140,14 @@ Greg Rosenblatt's suggestion for auto-repair: "The user may also want to mark so
 - Greg Ronsenblatt suggests dividing tests into a 'training' set and a 'test' set, as is done in machine learning to avoid overfitting. Of course this could also lead into 'propety-based testing', generators, etc.
 - Jonas Kölker suggests synthesizing multiple definitions, or perhaps even all of the Haskell Prelude-style list functions, simultaneously, based on the relationships between the functions, and their Quickcheck-style properties. He also suggests using properties like `reverse (xs++ys) == reverse ys ++ reverse xs` and `map f (xs++ys) == map f xs ++ map f ys` for synthesis.
 
-## KNOWN LIMITATIONS:
+## KNOWN LIMITATIONS
 
 - The `Best Guess` pane cannot be resized vertically, which sometimes cuts off text.
 - Non-specific error indication (the color changes for the text, but does not show which part of the text caused the error)
 - Currently the UI only supports 6 tests. Should allow more tests to be added.
 - Test inputs and outputs are `NSTextField`s rather than `NSTextView`s, which makes writing longer and more complicated tests awkward.
 
-## KNOWN ERRORS:
+## KNOWN ERRORS
 
 - `let` expressions are not parsed properly. In particular `(let ((x)) y)` parses. Probably other expressions are also parsed a little too laxly.
 - Shadowing of syntax is no longer working. (and and #t) => #t should result in a syntax error, unless the Definitions pane contains a defn named 'and': (define and (lambda x x)). In which case, (and and #t) should be legal syntax. (Wonder if we broke this when we messed with the environment in evalo.)
@@ -165,7 +165,7 @@ Greg Rosenblatt's suggestion for auto-repair: "The user may also want to mark so
 - Fixed error: (lambda (,A ,B) ...) should always produce a disequality constraint between A and B.
 - Fixed error: Will modified the miniKanren reifier to remove unnecessary constraints involving gensyms. Alas, he goofed it, and the reifier removes too many constraints, including some =/= and absento constraints in play when gensyms are used.
 - Fixed error: scoping problem introduced by optimizing variable lookup.
-- Fixed error: Inserting a new logic variable with Control-<space> doesn't replace highlighted text. Instead, it adds the variable and keeps the hilighted text.
+- Fixed error: Inserting a new logic variable with Control-\<space\> doesn't replace highlighted text. Instead, it adds the variable and keeps the highlighted text.
 - changed reifier and main edit window to display constraints separately from "best guess" definition(s).
 - fixed: quickly tab-deleting a test with a syntax error (for example) can leave the 'syntax error message' on an empty test
 - added automatic addition of right parens, and auto-addition of logic variables (thanks Michael Ballantyne, Guannan Wei, Pierce Darragh, Michael Adams, for discussions on how this might work)
