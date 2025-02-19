@@ -205,18 +205,18 @@ class EditorWindowUI(QWidget):
         color = self.status_colors.get(status, "black")
 
         if 0 <= index < len(self.testStatusLabels):
-            self._set_te(index, status_text, color)
+            self._set_test_status_label(index, status_text, color)
 
-    # TODO Rename this here and in `set_test_status` and `_set_test_status`
     def _set_test_status_label(self, index, text, color):
-        label = self.testStatusLabels[index]
+        if 0 <= index < len(self.testStatusLabels):
+            label = self.testStatusLabels[index]
         label.setText(text)
         label.setStyleSheet(f"color: {color};")
 
     def reset_test_ui(self):
         """Resets the test UI elements to their default state."""
         for i in range(len(self.testInputs)):
-            self._set_test_status((i, "", TaskStatus.SUCCESS))
+            self._set_test_status_label(i, "", "green")
 
     def clear_error_output(self):
         """Clears the error output text edit."""
