@@ -1,6 +1,6 @@
 import sys
 
-VERBOSE = 3
+VERBOSE = 2
 WARN = "❌‼️‼️"  # 0
 GOOD = "✅"  # 1
 INFO = "✏️"  # 2

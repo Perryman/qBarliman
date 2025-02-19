@@ -4,5 +4,4 @@ cocoa/Barliman.xcodeproj/project.xcworkspace/xcuserdata/
 **/cocoa
 **.vscode
 .windsurfrules
-.sourcery.yaml
 .*cache*
