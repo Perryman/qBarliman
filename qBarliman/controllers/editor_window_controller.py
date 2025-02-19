@@ -111,22 +111,12 @@ class EditorWindowController(QObject):
     def _on_definition_text_changed(self):
         """Handles definition text changes and schedules tests."""
         l.info("Definition text changed")
-        self.update_model(
-            lambda m: m.update_definition_text(
-                self.view.schemeDefinitionView.toPlainText()
-            )
-        )
         self.run_barliman()
 
     @Slot()
     def _on_tests_changed(self):
         """Handles test case changes and schedules tests."""
         l.info("Test cases changed")
-        self.update_model(
-            lambda m: m.update_tests(
-                self.view.testInputs, self.view.testExpectedOutputs
-            )
-        )
         self.run_barliman()
 
     def _test_data_changed(self, old_data, new_data):
@@ -222,16 +212,8 @@ class EditorWindowController(QObject):
             )
         )
 
-        self.model.statusChanged.connect(self._on_tests_changed)
-        self.view.schemeDefinitionView.textChanged.connect(
-            lambda: self.update_model(
-                lambda m: m.update_definition_text(
-                    self.view.schemeDefinitionView.toPlainText()
-                )
-            )
-        )
         self.view.schemeDefinitionView.codeTextChanged.connect(
-            self._on_definition_text_changed
+            self.model.update_definition_text
         )
 
         for input_field in self.view.testInputs:
@@ -249,19 +231,13 @@ class EditorWindowController(QObject):
                 lambda text, idx=i: self.model.update_test_expected(idx + 1, text)
             )
 
+        # 3. Connect model signals to task scheduling
+        self.model.definitionTextChanged.connect(self._on_definition_text_changed)
+        self.model.testCasesChanged.connect(self._on_tests_changed)
+
+        # 4. Connect execution service signals (still using _handle_... for now)
         self.execution_service.taskResultReady.connect(self._handle_task_result)
         self.execution_service.processStarted.connect(self._handle_process_started)
-
-    def update_model(self, updater):
-        """Apply an update to the model via a callback function.
-        Args:
-            updater: Callback function that takes model as argument and updates it
-        """
-        try:
-            updater(self.model)
-        except Exception as e:
-            l.warn(f"Error updating model: {e}")
-            self.view.update_ui("error_output", str(e))
 
     def execute_config(self, result):
         """Execute UI updates based on task configuration."""

@@ -71,14 +71,6 @@ class EditorWindowUI(QWidget):
         self.schemeDefinitionView.setFont(self.default_font)
         self.schemeDefinitionView.setPlaceholderText("Enter Scheme definitions...")
 
-        # Store controller reference and connect signals
-        self.controller = self.main_window.controller
-        self.schemeDefinitionView.codeTextChanged.connect(
-            lambda text: self.controller.update_model(
-                lambda m: m.update_definition_text(text)
-            )
-        )
-
         self.bestGuessView = SchemeEditorTextView(self)
         self.bestGuessView.setReadOnly(True)
         self.bestGuessView.setFont(self.default_font)
