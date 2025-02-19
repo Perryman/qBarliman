@@ -195,9 +195,10 @@ class EditorWindowUI(QWidget):
         inputs, expected = data
         for i, (inp, exp) in enumerate(zip(inputs, expected)):
             if i < len(self.testInputs):
-                self.testInputs[i].setText(inp)
+                # Convert inputs/expected to strings before setting
+                self.testInputs[i].setText(str(inp))
             if i < len(self.testExpectedOutputs):
-                self.testExpectedOutputs[i].setText(exp)
+                self.testExpectedOutputs[i].setText(str(exp))
 
     def _set_test_status(self, data: tuple[int, str, TaskStatus]):
         """Helper to set text and color on a test status label."""

@@ -173,11 +173,15 @@ class EditorWindowController(QObject):
         self.view.clear_error_output()
         l.good("Running Barliman")
         self.run_code("simple")
-        for e, (i, o) in enumerate(
-            zip(self.model.test_inputs, self.model.test_expected), start=1
-        ):
-            l.info(f"Running test {e=}: {i=} {o=}")
-            if i and o:
+
+        # Get string values from model's test data
+        test_inputs = [str(i) for i in self.model.test_inputs]
+        test_expected = [str(o) for o in self.model.test_expected]
+
+        for e, (i, o) in enumerate(zip(test_inputs, test_expected), start=1):
+
+            if i.strip() and o.strip():  # Safe to call strip() on strings
+                l.info(f"Running test {e=}: {i=} {o=}")
                 self.run_code(f"test{e}")
         self.run_code("allTests")
 

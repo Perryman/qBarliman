@@ -70,29 +70,40 @@ class SchemeDocument(QObject):
 
     def update_test_input(self, test_number: int, value: str) -> None:
         index = test_number - 1
+        # Convert value to string and ensure we're storing string values
+        str_value = value if value is not None else ""
         if (
             0 <= index < len(self._data.test_inputs)
-            and self._data.test_inputs[index] != value
+            and self._data.test_inputs[index] != str_value
         ):
-            self._data = self._data.update_test_input(index, value)
+            self._data = self._data.update_test_input(index, str_value)
             self.testCasesChanged.emit(
                 self._data.test_inputs.copy(), self._data.test_expected.copy()
             )
 
     def update_test_expected(self, test_number: int, value: str) -> None:
         index = test_number - 1
+        # Convert value to string and ensure we're storing string values
+        str_value = value if value is not None else ""
         if (
             0 <= index < len(self._data.test_expected)
-            and self._data.test_expected[index] != value
+            and self._data.test_expected[index] != str_value
         ):
-            self._data = self._data.update_test_expected(index, value)
+            self._data = self._data.update_test_expected(index, str_value)
             self.testCasesChanged.emit(
                 self._data.test_inputs.copy(), self._data.test_expected.copy()
             )
 
     def update_tests(self, inputs: List[str], expected: List[str]) -> None:
-        if inputs != self._data.test_inputs or expected != self._data.test_expected:
-            self._data = self._data.update_tests(inputs, expected)
+        # Convert inputs/expected to string lists
+        str_inputs = [str(x.text() if hasattr(x, "text") else x) for x in inputs]
+        str_expected = [str(x.text() if hasattr(x, "text") else x) for x in expected]
+
+        if (
+            str_inputs != self._data.test_inputs
+            or str_expected != self._data.test_expected
+        ):
+            self._data = self._data.update_tests(str_inputs, str_expected)
             self.testCasesChanged.emit(
                 self._data.test_inputs.copy(), self._data.test_expected.copy()
             )
