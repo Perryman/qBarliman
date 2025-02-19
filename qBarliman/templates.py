@@ -123,10 +123,10 @@ MAKE_QUERY_SIMPLE_FOR_MONDO_SCHEME_T = Template(
 {LOAD_MK_VICARE_SCM}
 {LOAD_MK_SCM}
 {INTERP_SCM}
-{MAKE_QUERY_STRING_T.safe_substitute( \
-    name="-simple", \
-    body=",_", expected_out="q", query_type="simple", \
-    parse_ans=PARSE_ANS_STRING_T.safe_substitute(), \
+{MAKE_QUERY_STRING_T.safe_substitute(
+    name="-simple",
+    body=",_", expected_out="q", query_type="simple",
+    parse_ans=PARSE_ANS_STRING_T.safe_substitute(),
     define_ans="")}
 """
 )
@@ -238,18 +238,19 @@ PARSE_FAKE_DEFNS_ANS_T = Template(
 """
 )
 
+not_template = ["((conde$", "(conde$-dfs", "(conde$", ";1$", "(conde1$"]
+
 
 def unroll(tmpl: Template, subs: dict, iters: int = 5, res: str = "") -> str:
     if iters <= 0:
         raise ValueError("Max template unrolling iterations exceeded")
     curr = tmpl.safe_substitute(**subs)
     if curr == res and "$" in curr:
-        l.warn(
-            "Possibly incomplete template! Ensure these are all from the rel-interp and not templates.py or constants.py"
-        )
-        d = [s for s in curr.split() if "$" in s]
-        for s in d:
-            print(rainbowp(s), end=", ")
-        print()
+        d = [s for s in curr.split() if "$" in s and s not in not_template]
+        if d:
+            l.warn("Possibly incomplete template!")
+            for s in d:
+                print(rainbowp(s), end=", ")
+            print()
 
     return curr if curr == res else unroll(Template(curr), subs, iters - 1, curr)

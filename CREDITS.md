@@ -1,10 +1,6 @@
-
-
-
 # Original credits from [https://github.com/webyrd/Barliman/]()
 
-
----------------------------------------
+---
 
 ## Acknowledgements and thanks
 
@@ -18,5 +14,4 @@ Greg Rosenblatt has been improving the search and the miniScheme interpreter to 
 
 Barliman is intended to be an improved version of the very crude 'miniKanren playground' I showed at my 2016 PEPM tutorial on miniKanren: https://github.com/webyrd/minikanren-playground
 
-
--------------------------------------
+---

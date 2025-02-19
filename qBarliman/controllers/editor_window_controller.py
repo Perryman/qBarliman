@@ -13,6 +13,7 @@ from qBarliman.operations.scheme_execution_service import (
 )
 from qBarliman.utils.load_interpreter import load_interpreter_code
 from qBarliman.utils.query_builder import QueryBuilder, SchemeQueryType
+from qBarliman.utils.rainbowp import rainbowp
 from qBarliman.views.editor_window_ui import EditorWindowUI
 
 
@@ -50,7 +51,7 @@ class EditorWindowController(QObject):
         self._debounce_interval = 0.5  # seconds
         self._pending_task_types = []  # List of task types to run
         self._current_task_type = None
-        self._all_tests_task_id = None
+        self._task_queue = []
 
         self._config = {
             "simple": {
@@ -102,9 +103,10 @@ class EditorWindowController(QObject):
 
     def maybe_kill_alltests(self):
         """Kill all_tests if it is running."""
-        if self._all_tests_task_id is not None:
-            self.execution_service.kill_process(self._all_tests_task_id)
-            self._all_tests_task_id = None
+        while self._task_queue:
+            l.info(f"Killing task ID: {self._task_queue[0]}")
+            self.execution_service.kill_process(self._task_queue[0])
+            self._task_queue.pop(0)
 
     def initialize_ui(self):
         self.view.update_ui("definition_text", self.model.definition_text)
@@ -113,20 +115,27 @@ class EditorWindowController(QObject):
         )
         self.view.reset_test_ui()
 
-    def update_model(self, updater):
-        """Applies an updater function to the model and schedules necessary tasks."""
-        old_data = self.model._data
-        updater(self.model)
-        new_data = self.model._data
-        # Definition text change -> simple check
-        if new_data.definition_text != old_data.definition_text:
-            self.maybe_kill_alltests()  # Cancel previous tests
-            self._schedule_run_code("simple")
-            # Schedule test1-n
-            for i in range(1, len(new_data.test_inputs) + 1):
-                self._schedule_run_code(f"test{i}")
-            # Schedule allTests
-            self._schedule_run_code("allTests")
+    @Slot()
+    def _on_definition_text_changed(self):
+        """Handles definition text changes and schedules tests."""
+        l.info("Definition text changed")
+        self.update_model(
+            lambda m: m.update_definition_text(
+                self.view.schemeDefinitionView.toPlainText()
+            )
+        )
+        self.run_barliman()
+
+    @Slot()
+    def _on_tests_changed(self):
+        """Handles test case changes and schedules tests."""
+        l.info("Test cases changed")
+        self.update_model(
+            lambda m: m.update_tests(
+                self.view.testInputs, self.view.testExpectedOutputs
+            )
+        )
+        self.run_barliman()
 
     def _test_data_changed(self, old_data, new_data):
         """Check if test inputs or expected outputs have changed."""
@@ -156,7 +165,19 @@ class EditorWindowController(QObject):
             f.write(script)
         task_id = self.execution_service.execute_scheme(script_path, task_type)
         if task_type == "allTests":
-            self._all_tests_task_id = task_id
+            self._task_queue = task_id
+
+    def run_barliman(self):
+        """Runs simple, test1-n if not empty, and allTests."""
+        self.view.clear_error_output()
+        l.good("Running Barliman")
+        self.run_code("simple")
+        for e, (i, o) in enumerate(
+            zip(self.model.test_inputs, self.model.test_expected), start=1
+        ):
+            if i and o:
+                self.run_code(f"test{e}")
+        self.run_code("allTests")
 
     def run_code(self, task_type):
         """Runs the Scheme code for a given task type."""
@@ -167,21 +188,23 @@ class EditorWindowController(QObject):
                 script = self.query_builder.build_query(
                     SchemeQueryType.SIMPLE, self.model._data
                 )
-            elif task_type == "allTests":
-                script = self.query_builder.build_query(
-                    SchemeQueryType.ALL_TESTS, self.model._data
-                )
-                self._all_tests_task_id = None  # Reset before potentially setting
             elif task_type.startswith("test"):
                 index = int(task_type[4:])  # Extract test number
                 script = self.query_builder.build_query(
                     SchemeQueryType.TEST, (self.model._data, index)
                 )
+            elif task_type == "allTests":
+                script = self.query_builder.build_query(
+                    SchemeQueryType.ALL_TESTS, self.model._data
+                )
+                self._task_queue = None  # Reset before potentially setting
             else:
                 l.warn(f"Invalid task type: {task_type}")
                 return
 
             if script:
+                l.good(f"Executing script for {task_type}")
+                l.debug(rainbowp(script))
                 self._execute_scheme_script(task_type, script)
         except Exception as e:
             l.warn(f"Error building/running query: {e}")
@@ -197,6 +220,7 @@ class EditorWindowController(QObject):
             )
         )
 
+        self.model.statusChanged.connect(self._on_tests_changed)
         self.view.schemeDefinitionView.textChanged.connect(
             lambda: self.update_model(
                 lambda m: m.update_definition_text(
@@ -204,22 +228,29 @@ class EditorWindowController(QObject):
                 )
             )
         )
-        # Update test input/output connections to use textModified instead of textChanged
+
         for i, input_field in enumerate(self.view.testInputs):
             input_field.textModified.connect(
-                lambda text, idx=i: self.update_model(
-                    lambda m: m.update_test_input(idx + 1, text)
-                )
+                lambda text, idx=i: self.model.update_test_input(idx + 1, text)
             )
         for i, output_field in enumerate(self.view.testExpectedOutputs):
             output_field.textModified.connect(
-                lambda text, idx=i: self.update_model(
-                    lambda m: m.update_test_expected(idx + 1, text)
-                )
+                lambda text, idx=i: self.model.update_test_expected(idx + 1, text)
             )
 
         self.execution_service.taskResultReady.connect(self._handle_task_result)
         self.execution_service.processStarted.connect(self._handle_process_started)
+
+    def update_model(self, updater):
+        """Apply an update to the model via a callback function.
+        Args:
+            updater: Callback function that takes model as argument and updates it
+        """
+        try:
+            updater(self.model)
+        except Exception as e:
+            l.warn(f"Error updating model: {e}")
+            self.view.update_ui("error_output", str(e))
 
     def execute_config(self, result):
         """Execute UI updates based on task configuration."""

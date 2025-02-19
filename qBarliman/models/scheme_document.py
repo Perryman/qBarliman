@@ -15,9 +15,7 @@ class SchemeDocument(QObject):
 
     # Signals for changes.
     definitionTextChanged = Signal(str)
-    testCasesChanged = Signal(
-        list, list
-    )  # Emits copies of test_inputs and test_expected.
+    testCasesChanged = Signal(list, list)
     statusChanged = Signal(str)
 
     def __init__(
