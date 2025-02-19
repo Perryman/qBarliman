@@ -36,11 +36,9 @@ class ProcessManager(QObject):
         return self._process.processId()
 
     def _handle_stdout(self):
-        data = self._process.readAllStandardOutput().data().decode()
-        if data:
+        if data := self._process.readAllStandardOutput().data().decode():
             self.processOutput.emit(data, "")
 
     def _handle_stderr(self):
-        data = self._process.readAllStandardError().data().decode()
-        if data:
+        if data := self._process.readAllStandardError().data().decode():
             self.processOutput.emit("", data)

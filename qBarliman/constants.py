@@ -68,23 +68,21 @@ def find_scheme_executable() -> Optional[str]:
     potential_executables = ["scheme", "chez", "chezscheme"]
 
     if platform.system() == "Windows":
-        potential_executables = [exe + ".exe" for exe in potential_executables]
+        potential_executables = [f"{exe}.exe" for exe in potential_executables]
 
-    for exe in potential_executables:
-        if shutil.which(exe) is not None:
-            return exe
+    return next(
+        (exe for exe in potential_executables if shutil.which(exe) is not None),
+        None,
+    )
 
-    return None
 
-
-SCHEME_EXECUTABLE = find_scheme_executable()
-if not SCHEME_EXECUTABLE:
+if SCHEME_EXECUTABLE := find_scheme_executable():
+    l.good(f"Found Scheme executable: {SCHEME_EXECUTABLE}")
+else:
     l.warn(
         f"Could not find Scheme executable in PATH. Looked for: {', '.join(['scheme', 'chez', 'chezscheme'])}"
     )
     sys.exit(1)
-else:
-    l.good(f"Found Scheme executable: {SCHEME_EXECUTABLE}")
 
 # Load query strings from files
 

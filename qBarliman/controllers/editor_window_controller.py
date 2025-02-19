@@ -148,6 +148,16 @@ class EditorWindowController(QObject):
             self.run_code(task_type)
         self._pending_task_types = []
 
+    def _execute_scheme_script(self, task_type, script):
+        self._current_task_type = task_type
+        script_path = os.path.join(TMP_DIR, f"{task_type}.scm")
+        l.info(f"Writing script to {script_path}")
+        with open(script_path, "w") as f:
+            f.write(script)
+        task_id = self.execution_service.execute_scheme(script_path, task_type)
+        if task_type == "allTests":
+            self._all_tests_task_id = task_id
+
     def run_code(self, task_type):
         """Runs the Scheme code for a given task type."""
         self.view.clear_error_output()  # Clear errors
@@ -172,15 +182,7 @@ class EditorWindowController(QObject):
                 return
 
             if script:
-                self._current_task_type = task_type
-                script_path = os.path.join(TMP_DIR, f"{task_type}.scm")
-                l.info(f"Writing script to {script_path}")
-                with open(script_path, "w") as f:
-                    f.write(script)
-                task_id = self.execution_service.execute_scheme(script_path, task_type)
-                if task_type == "allTests":
-                    self._all_tests_task_id = task_id
-
+                self._execute_scheme_script(task_type, script)
         except Exception as e:
             l.warn(f"Error building/running query: {e}")
             self.view.update_ui("error_output", str(e))

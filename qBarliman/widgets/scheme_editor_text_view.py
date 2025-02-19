@@ -30,17 +30,8 @@ class SchemeEditorTextView(QTextEdit):
             event.modifiers() == Qt.KeyboardModifier.ControlModifier
             and event.key() == Qt.Key.Key_Space
         ):
-            var_to_insert = self.findNextUnusedLogicVar()
-            if var_to_insert:
-                cursor = self.textCursor()
-                current_pos = cursor.position()
-                # Insert with undo support
-                cursor.beginEditBlock()
-                cursor.insertText(var_to_insert)
-                cursor.endEditBlock()
-                # Move cursor to end of inserted text
-                cursor.setPosition(current_pos + len(var_to_insert))
-                self.setTextCursor(cursor)
+            if var_to_insert := self.findNextUnusedLogicVar():
+                self._insert_gensym(var_to_insert)
             else:
                 super().keyPressEvent(event)
         else:
@@ -51,12 +42,20 @@ class SchemeEditorTextView(QTextEdit):
         if not self._block_text_changed_signal:
             self.codeTextChanged.emit(self.toPlainText())
 
+    def _insert_gensym(self, var_to_insert):
+        cursor = self.textCursor()
+        current_pos = cursor.position()
+        # Insert with undo support
+        cursor.beginEditBlock()
+        cursor.insertText(var_to_insert)
+        cursor.endEditBlock()
+        # Move cursor to end of inserted text
+        cursor.setPosition(current_pos + len(var_to_insert))
+        self.setTextCursor(cursor)
+
     def findNextUnusedLogicVar(self) -> str:
         current_text = self.toPlainText()
-        for lv in self.logic_vars:
-            if lv not in current_text:
-                return lv
-        return ""  # If all variables are used, return empty string
+        return next((lv for lv in self.logic_vars if lv not in current_text), "")
 
     def canUndo(self) -> bool:
         return self.document().isUndoAvailable()
@@ -83,9 +82,8 @@ class SchemeEditorTextView(QTextEdit):
         if cursor_pos is not None:
             cursor = self.textCursor()  # Get the current cursor
             cursor.setPosition(cursor_pos)  # Set the position
-            self.setTextCursor(cursor)  # Apply the modified cursor
         else:
             cursor = self.textCursor()  # Get the current cursor
             cursor.setPosition(old_cursor_pos)  # Restore old position
-            self.setTextCursor(cursor)  # Apply the modified cursor
+        self.setTextCursor(cursor)  # Apply the modified cursor
         self._block_text_changed_signal = False  # Re-enable signal

@@ -49,7 +49,7 @@ class SimpleQueryStrategy(BaseQueryStrategy, QueryStrategy):
             "eval_string_fast": PARSE_ANS_STRING_T.template,
         }
         res = unroll(MAKE_QUERY_SIMPLE_FOR_MONDO_SCHEME_T, subs)
-        # l.debug(f"Simple query strategy:\n{rainbowp(res)}")
+        l.debug(f"Simple query strategy:\n{rainbowp(res)}")
         return res
 
 
@@ -141,6 +141,4 @@ class QueryBuilder(QObject):
 
     def _format_scheme_value(self, value: str) -> str:
         """Formats a Python string for use in Scheme code."""
-        if not value.strip():  # Check for empty or whitespace-only strings
-            return "'()"  # Return '() for empty inputs
-        return f"{value}"  # User input will pass as is
+        return f"{value}" if value.strip() else ""

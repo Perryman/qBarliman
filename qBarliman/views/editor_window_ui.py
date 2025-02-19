@@ -132,8 +132,7 @@ class EditorWindowUI(QWidget):
             update_type (str):  The type of update (e.g., "definition_text", "test_status").
             data: The data associated with the update (can be different types).
         """
-        updater = self._widget_updaters.get(update_type)
-        if updater:
+        if updater := self._widget_updaters.get(update_type):
             widget, update_func = updater
             if widget:
                 update_func(widget, data)
@@ -173,9 +172,7 @@ class EditorWindowUI(QWidget):
 
     def set_test_status(self, index: int, status: str, color: str):
         if 0 <= index < len(self.testStatusLabels):
-            label = self.testStatusLabels[index]
-            label.setText(status)
-            label.setStyleSheet(f"color: {color};")
+            self._set_test_status_label(index, status, color)
 
     def _set_labeled_text(self, label: QLabel, data: tuple[str, TaskStatus]):
         """Helper to set text and color on a label."""
@@ -208,9 +205,13 @@ class EditorWindowUI(QWidget):
         color = self.status_colors.get(status, "black")
 
         if 0 <= index < len(self.testStatusLabels):
-            label = self.testStatusLabels[index]
-            label.setText(status_text)
-            label.setStyleSheet(f"color: {color};")
+            self._set_te(index, status_text, color)
+
+    # TODO Rename this here and in `set_test_status` and `_set_test_status`
+    def _set_test_status_label(self, index, text, color):
+        label = self.testStatusLabels[index]
+        label.setText(text)
+        label.setStyleSheet(f"color: {color};")
 
     def reset_test_ui(self):
         """Resets the test UI elements to their default state."""

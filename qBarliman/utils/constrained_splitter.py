@@ -1,5 +1,5 @@
-from PySide6.QtWidgets import QSplitter
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QSplitter
 
 
 class ConstrainedSplitter(QSplitter):
@@ -20,13 +20,11 @@ class ConstrainedSplitter(QSplitter):
         if self.min_sizes:
             sizes = self.sizes()
             for i, min_size in enumerate(self.min_sizes):
-                if sizes[i] < min_size:
-                    sizes[i] = min_size
+                sizes[i] = max(sizes[i], min_size)
             self.setSizes(sizes)
         # Enforce maximum sizes if provided.
         if self.max_sizes:
             sizes = self.sizes()
             for i, max_size in enumerate(self.max_sizes):
-                if sizes[i] > max_size:
-                    sizes[i] = max_size
+                sizes[i] = min(sizes[i], max_size)
             self.setSizes(sizes)

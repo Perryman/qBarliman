@@ -53,17 +53,13 @@ class SchemeExecutionService(QObject):
         """Execute a Scheme script."""
         l.good(f"Execute: scheme --script {script_path}")
         if not os.path.exists(script_path):
-            result = TaskResult(task_type, TaskStatus.FAILED, "Script file not found.")
-            self.taskResultReady.emit(result)
-            return None
-
-        if not SCHEME_EXECUTABLE:
-            result = TaskResult(
-                task_type, TaskStatus.FAILED, "SCHEME_EXECUTABLE not set."
+            return self._extracted_from_execute_scheme_5(
+                task_type, "Script file not found."
             )
-            self.taskResultReady.emit(result)
-            return None
-
+        if not SCHEME_EXECUTABLE:
+            return self._extracted_from_execute_scheme_5(
+                task_type, "SCHEME_EXECUTABLE not set."
+            )
         self._task_type = task_type
         self.start_time = time.monotonic()
         self.processStarted.emit(task_type)
@@ -79,6 +75,12 @@ class SchemeExecutionService(QObject):
         pid = self.process_manager.run_process(command, arguments)
         self._current_process_id = pid
         return pid
+
+    # TODO Rename this here and in `execute_scheme`
+    def _extracted_from_execute_scheme_5(self, task_type, arg1):
+        result = TaskResult(task_type, TaskStatus.FAILED, arg1)
+        self.taskResultReady.emit(result)
+        return None
 
     def kill_process(self, pid=None):
         l.debug(f"Kill process, pid={pid}")
@@ -113,7 +115,7 @@ class SchemeExecutionService(QObject):
 
         result = self._process_output(self._stdout_buffer, self._task_type, exit_code)
         result.elapsed_time = elapsed_time
-        result.output = self._stderr_buffer if self._stderr_buffer else result.output
+        result.output = self._stderr_buffer or result.output
 
         self._stdout_buffer = ""
         self._stderr_buffer = ""
@@ -139,10 +141,7 @@ class SchemeExecutionService(QObject):
         elif output == "()":
             status = TaskStatus.EVALUATION_FAILED
             message = "Evaluation Failed"
-        elif (
-            output == "illegal-sexp-in-test/answer"
-            or output == "parse-error-in-test/answer"
-        ):
+        elif output in {"illegal-sexp-in-test/answer", "parse-error-in-test/answer"}:
             status = TaskStatus.SYNTAX_ERROR
             message = "Syntax Error in test"
 

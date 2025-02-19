@@ -1,0 +1,19 @@
+rules:
+  - ruleset: p/python
+  - id: owasp-python
+    message: "OWASP Python vulnerabilities"
+    languages:
+      - python
+    severity: "warning"
+    rules:
+      - https://semgrep.dev/p/python
+  - id: find-secrets
+    message: "Potential secrets found"
+    languages:
+      - python
+      - swift
+      - git
+      - scm
+    severity: "error"
+    rules:
+      - https://semgrep.dev/p/find-secrets

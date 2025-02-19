@@ -60,6 +60,7 @@ app/
 ## Quick Examples
 
 ### Good
+
 ```python
 # View Model with observable properties
 class EditorViewModel(ViewModel):
@@ -76,17 +77,19 @@ class EditorView(QWidget):
 ```
 
 ### Bad
+
 ```python
 # ❌ Don't do this
 class Editor:
     def update_ui(self):
         self.label.setText(self.get_status())
-    
+
     def on_button_click(self):
         self.update_ui()
 ```
 
 This pattern:
+
 1. Reduces boilerplate through metaclasses
 2. Automates signal/slot connections
 3. Makes state changes predictable
