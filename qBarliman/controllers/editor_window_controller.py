@@ -140,13 +140,16 @@ class EditorWindowController(QObject):
         """Schedules a task, avoiding duplicates."""
         l.info(f"Scheduling task: {task_type}")
         if task_type not in self._pending_task_types:
+            l.info(f"Task {task_type} not already scheduled")
             self._pending_task_types.append(task_type)
         self.run_code_timer.start(int(self._debounce_interval * 1000))
 
     @Slot()
     def _run_code_debounce(self):
         """Executes pending tasks."""
+        l.info("Running code after debounce")
         for task_type in self._pending_task_types:
+            l.info(f"Running task: {task_type}")
             self.run_code(task_type)
         self._pending_task_types = []
 
@@ -157,7 +160,9 @@ class EditorWindowController(QObject):
         with open(script_path, "w") as f:
             f.write(script)
         task_id = self.execution_service.execute_scheme(script_path, task_type)
+        l.info(f"Spawned task_id pid {task_id}")
         self._task_queue.append(task_id)
+        l.info(f"Task queue: {self._task_queue}")
 
     def run_barliman(self):
         """Queues simple, test1-n if not empty, and allTests for parallel execution."""
@@ -201,7 +206,7 @@ class EditorWindowController(QObject):
 
             if script:
                 l.good(f"Executing script for {task_type}")
-                l.debug(rainbowp(script))
+                l.scheme(rainbowp(script))
                 self._execute_scheme_script(task_type, script)
         except Exception as e:
             l.warn(f"Error building/running query: {e}")

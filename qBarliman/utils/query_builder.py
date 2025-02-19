@@ -49,7 +49,7 @@ class SimpleQueryStrategy(BaseQueryStrategy, QueryStrategy):
             "eval_string_fast": PARSE_ANS_STRING_T.template,
         }
         res = unroll(MAKE_QUERY_SIMPLE_FOR_MONDO_SCHEME_T, subs)
-        l.debug(f"Simple query strategy:\n{rainbowp(res)}")
+        l.scheme(f"Simple query strategy:\n{rainbowp(res)}")
         return res
 
 
@@ -68,7 +68,7 @@ class TestQueryStrategy(BaseQueryStrategy, QueryStrategy):
             "eval_string_fast": PARSE_ANS_STRING_T.template,
         }
         res = unroll(MAKE_NEW_TEST_N_QUERY_STRING_T, subs)
-        l.debug(f"Test query strategy:\n{rainbowp(res)}")
+        l.scheme(f"Test query strategy:\n{rainbowp(res)}")
         return res
 
 
@@ -104,7 +104,7 @@ class AllTestsQueryStrategy(BaseQueryStrategy, QueryStrategy):
         }
 
         res = unroll(ALL_TEST_WRITE_T, subs)
-        l.debug(f"All tests query strategy:\n{rainbowp(res)}")
+        l.scheme(f"All tests query strategy:\n{rainbowp(res)}")
         return res
 
 

@@ -1,10 +1,11 @@
 import sys
 
-VERBOSE = 2
+VERBOSE = 3
 WARN = "❌‼️‼️"  # 0
 GOOD = "✅"  # 1
 INFO = "✏️"  # 2
 DEBUG = "🐞"  # 3
+SCHEME = "🖨️"  # 4
 # Avoid unnecessary coloring when redirecting to file
 USE_COLORS = sys.stdout.isatty()
 
@@ -27,3 +28,8 @@ def info(*args) -> None:
 def debug(*args) -> None:
     if VERBOSE >= 3:
         print(f"\033[36m{DEBUG}\033[0m" if USE_COLORS else DEBUG, *args)
+
+
+def scheme(*args) -> None:
+    if VERBOSE >= 4:
+        print(f"\033[34m{SCHEME}\033[0m" if USE_COLORS else SCHEME, *args)
