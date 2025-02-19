@@ -8,7 +8,6 @@ from qBarliman.constants import TMP_DIR
 from qBarliman.models.scheme_document import SchemeDocument
 from qBarliman.operations.scheme_execution_service import (
     SchemeExecutionService,
-    TaskResult,
     TaskStatus,
 )
 from qBarliman.utils.load_interpreter import load_interpreter_code
@@ -119,13 +118,6 @@ class EditorWindowController(QObject):
         l.info("Test cases changed")
         self.run_barliman()
 
-    def _test_data_changed(self, old_data, new_data):
-        """Check if test inputs or expected outputs have changed."""
-        return (
-            new_data.test_inputs != old_data.test_inputs
-            or new_data.test_expected != old_data.test_expected
-        )
-
     def _schedule_run_code(self, task_type):
         """Schedules a task, avoiding duplicates."""
         l.info(f"Scheduling task: {task_type}")
@@ -216,12 +208,6 @@ class EditorWindowController(QObject):
             self.model.update_definition_text
         )
 
-        for input_field in self.view.testInputs:
-            input_field.textModified.connect(self._on_tests_changed)
-
-        for output_field in self.view.testExpectedOutputs:
-            output_field.textModified.connect(self._on_tests_changed)
-
         for i, input_field in enumerate(self.view.testInputs):
             input_field.textModified.connect(
                 lambda text, idx=i: self.model.update_test_input(idx + 1, text)
@@ -231,15 +217,13 @@ class EditorWindowController(QObject):
                 lambda text, idx=i: self.model.update_test_expected(idx + 1, text)
             )
 
-        # 3. Connect model signals to task scheduling
         self.model.definitionTextChanged.connect(self._on_definition_text_changed)
         self.model.testCasesChanged.connect(self._on_tests_changed)
 
-        # 4. Connect execution service signals (still using _handle_... for now)
-        self.execution_service.taskResultReady.connect(self._handle_task_result)
+        self.execution_service.taskResultReady.connect(self.handle_task_result)
         self.execution_service.processStarted.connect(self._handle_process_started)
 
-    def execute_config(self, result):
+    def handle_task_result(self, result):
         """Execute UI updates based on task configuration."""
         task = "test" if result.task_type.startswith("test") else result.task_type
         outcome = "pass" if result.status == TaskStatus.SUCCESS else "fail"
@@ -269,9 +253,3 @@ class EditorWindowController(QObject):
         elif task_type.startswith("test"):
             index = int(task_type[4:]) - 1
             self.view.update_ui("test_status", (index, "???", TaskStatus.THINKING))
-
-    @Slot(TaskResult)
-    def _handle_task_result(self, result: TaskResult):
-        """Handles the TaskResult and updates the UI."""
-        l.info(f"Task result received: {result}")
-        self.execute_config(result)
