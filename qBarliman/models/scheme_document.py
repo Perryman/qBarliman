@@ -2,6 +2,8 @@ from typing import List, Optional
 
 from PySide6.QtCore import QObject, Signal
 
+from qBarliman.utils import log as l
+
 from ..constants import (
     DEFAULT_DEFINITIONS,
     DEFAULT_TEST_EXPECTED_OUTPUTS,
@@ -45,10 +47,12 @@ class SchemeDocument(QObject):
 
     @property
     def test_inputs(self) -> List[str]:
+        l.info(f"{self._data.test_inputs=}")
         return self._data.test_inputs.copy()
 
     @property
     def test_expected(self) -> List[str]:
+        l.info(f"{self._data.test_expected=}")
         return self._data.test_expected.copy()
 
     @property

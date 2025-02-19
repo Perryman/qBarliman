@@ -146,6 +146,7 @@ class EditorWindowController(QObject):
 
     def _schedule_run_code(self, task_type):
         """Schedules a task, avoiding duplicates."""
+        l.info(f"Scheduling task: {task_type}")
         if task_type not in self._pending_task_types:
             self._pending_task_types.append(task_type)
         self.run_code_timer.start(int(self._debounce_interval * 1000))
@@ -175,6 +176,7 @@ class EditorWindowController(QObject):
         for e, (i, o) in enumerate(
             zip(self.model.test_inputs, self.model.test_expected), start=1
         ):
+            l.info(f"Running test {e=}: {i=} {o=}")
             if i and o:
                 self.run_code(f"test{e}")
         self.run_code("allTests")
@@ -228,6 +230,15 @@ class EditorWindowController(QObject):
                 )
             )
         )
+        self.view.schemeDefinitionView.codeTextChanged.connect(
+            self._on_definition_text_changed
+        )
+
+        for input_field in self.view.testInputs:
+            input_field.textModified.connect(self._on_tests_changed)
+
+        for output_field in self.view.testExpectedOutputs:
+            output_field.textModified.connect(self._on_tests_changed)
 
         for i, input_field in enumerate(self.view.testInputs):
             input_field.textModified.connect(
