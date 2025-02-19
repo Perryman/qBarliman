@@ -31,6 +31,10 @@ lint:
     - prettier@3.5.1
     - ruff@0.9.6
     - trufflehog@3.88.9
+  ignore:
+    - linters: [ALL]
+      paths:
+        - qBarliman/minikanren/**/*.md
 actions:
   disabled:
     - trunk-announce
