@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional
 
-from PySide6.QtCore import QObject, QProcess, Signal
+from PySide6.QtCore import QObject, Signal
 
 from qBarliman.constants import SCHEME_EXECUTABLE
 from qBarliman.operations.process_manager import ProcessManager
@@ -33,7 +33,7 @@ class TaskResult:
 class SchemeExecutionService(QObject):
     """Service for executing Scheme code."""
 
-    taskResultReady = Signal(TaskResult)  # Single, unified signal
+    taskResultReady = Signal(TaskResult)
     processStarted = Signal(str)
 
     def __init__(self, parent: QObject = None):
@@ -53,31 +53,19 @@ class SchemeExecutionService(QObject):
         """Execute a Scheme script."""
         l.good(f"Execute: scheme --script {script_path}")
         if not os.path.exists(script_path):
-            return self._extracted_from_execute_scheme_5(
-                task_type, "Script file not found."
-            )
+            return self._handle_execution_error(task_type, "Script file not found.")
         if not SCHEME_EXECUTABLE:
-            return self._extracted_from_execute_scheme_5(
-                task_type, "SCHEME_EXECUTABLE not set."
-            )
+            return self._handle_execution_error(task_type, "SCHEME_EXECUTABLE not set.")
         self._task_type = task_type
         self.start_time = time.monotonic()
         self.processStarted.emit(task_type)
 
-        process = self.process_manager.process
-        process.setProcessChannelMode(
-            QProcess.SeparateChannels
-        )  # Separate stdout/stderr
-
-        command = SCHEME_EXECUTABLE
-        arguments = ["--script", script_path]
-
-        pid = self.process_manager.run_process(command, arguments)
-        self._current_process_id = pid
-        return pid
+        self.process_manager.enqueue_process(
+            SCHEME_EXECUTABLE, ["--script", script_path], task_type
+        )
 
     # TODO Rename this here and in `execute_scheme`
-    def _extracted_from_execute_scheme_5(self, task_type, arg1):
+    def _handle_execution_error(self, task_type, arg1):
         result = TaskResult(task_type, TaskStatus.FAILED, arg1)
         self.taskResultReady.emit(result)
         return None

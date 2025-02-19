@@ -23,25 +23,16 @@ class EditorWindowController(QObject):
         parent=None,
         query_builder: QueryBuilder = None,
         execution_service: SchemeExecutionService = None,
-    ):  # Inject dependencies
+    ):
         super().__init__(parent)
 
         self.main_window = QMainWindow()
-        self.main_window.controller = self  # Add controller reference
+        self.main_window.controller = self
         self.view = EditorWindowUI(self.main_window)
         self.main_window.setCentralWidget(self.view)
 
-        # Use injected QueryBuilder or create a default one if not provided
-        self.query_builder = query_builder or QueryBuilder(
-            load_interpreter_code()
-        )  # Default + load_interpreter_code moved
-
-        l.info("Initialized EditorWindowController")
-
-        # Use injected ExecutionService or create a default one if not provided
+        self.query_builder = query_builder or QueryBuilder(load_interpreter_code())
         self.execution_service = execution_service or SchemeExecutionService()
-
-        # Initialize model
         self.model = SchemeDocument()
 
         # Debounce timer
@@ -49,9 +40,10 @@ class EditorWindowController(QObject):
         self.run_code_timer.setSingleShot(True)
         self.run_code_timer.timeout.connect(self._run_code_debounce)
         self._debounce_interval = 0.5  # seconds
+
         self._pending_task_types = []  # List of task types to run
         self._current_task_type = None
-        self._task_queue = []
+        self._task_queue = []  # List of task pids
 
         self._config = {
             "simple": {
@@ -165,29 +157,29 @@ class EditorWindowController(QObject):
         with open(script_path, "w") as f:
             f.write(script)
         task_id = self.execution_service.execute_scheme(script_path, task_type)
-        if task_type == "allTests":
-            self._task_queue = task_id
+        self._task_queue.append(task_id)
 
     def run_barliman(self):
-        """Runs simple, test1-n if not empty, and allTests."""
+        """Queues simple, test1-n if not empty, and allTests for parallel execution."""
+        self.maybe_kill_alltests()
         self.view.clear_error_output()
         l.good("Running Barliman")
-        self.run_code("simple")
 
-        # Get string values from model's test data
+        self._schedule_run_code("simple")
+
         test_inputs = [str(i) for i in self.model.test_inputs]
         test_expected = [str(o) for o in self.model.test_expected]
 
         for e, (i, o) in enumerate(zip(test_inputs, test_expected), start=1):
+            if i.strip() and o.strip():
+                l.info(f"Queuing test {e=}: {i=} {o=}")
+                self._schedule_run_code(f"test{e}")
 
-            if i.strip() and o.strip():  # Safe to call strip() on strings
-                l.info(f"Running test {e=}: {i=} {o=}")
-                self.run_code(f"test{e}")
-        self.run_code("allTests")
+        self._schedule_run_code("allTests")
 
     def run_code(self, task_type):
         """Runs the Scheme code for a given task type."""
-        self.view.clear_error_output()  # Clear errors
+        self.view.clear_error_output()
         l.info(f"Running code for task type: {task_type}")
         try:
             if task_type == "simple":
@@ -203,7 +195,6 @@ class EditorWindowController(QObject):
                 script = self.query_builder.build_query(
                     SchemeQueryType.ALL_TESTS, self.model._data
                 )
-                self._task_queue = None  # Reset before potentially setting
             else:
                 l.warn(f"Invalid task type: {task_type}")
                 return
