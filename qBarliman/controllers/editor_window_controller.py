@@ -88,8 +88,12 @@ class EditorWindowController(QObject):
 
         # Set up signals and UI
         self.setup_connections()
+
+        self.model.definitionTextChanged.emit(self.model.definition_text)
+        self.model.testCasesChanged.emit(
+            self.model.test_inputs, self.model.test_expected
+        )
         self.main_window.show()
-        self.initialize_ui()
         self.run_code("simple")  # Initial run
 
     def maybe_kill_alltests(self):
@@ -98,13 +102,6 @@ class EditorWindowController(QObject):
             l.info(f"Killing task ID: {self._task_queue[0]}")
             self.execution_service.kill_process(self._task_queue[0])
             self._task_queue.pop(0)
-
-    def initialize_ui(self):
-        self.view.update_ui("definition_text", self.model.definition_text)
-        self.view.update_ui(
-            "test_cases", (self.model.test_inputs, self.model.test_expected)
-        )
-        self.view.reset_test_ui()
 
     @Slot()
     def _on_definition_text_changed(self):
@@ -220,11 +217,11 @@ class EditorWindowController(QObject):
         self.model.definitionTextChanged.connect(self._on_definition_text_changed)
         self.model.testCasesChanged.connect(self._on_tests_changed)
 
-        self.execution_service.taskResultReady.connect(self.handle_task_result)
+        self.execution_service.taskResultReady.connect(self._handle_task_result)
         self.execution_service.processStarted.connect(self._handle_process_started)
 
-    def handle_task_result(self, result):
-        """Execute UI updates based on task configuration."""
+    def _handle_task_result(self, result):
+        """Handles the TaskResult using config dictionary."""
         task = "test" if result.task_type.startswith("test") else result.task_type
         outcome = "pass" if result.status == TaskStatus.SUCCESS else "fail"
         cfg = self._config.get(task)
