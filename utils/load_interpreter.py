@@ -1,8 +1,8 @@
 import os
 from typing import List
 
-from qBarliman.constants import CORE_FULLPATH
-from qBarliman.utils import log as l
+from config.constants import CORE_FULLPATH
+from utils import log as l
 
 
 def load_interpreter_code(CORE_FULLPATH: List[str] = CORE_FULLPATH) -> str:

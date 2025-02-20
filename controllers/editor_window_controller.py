@@ -1,22 +1,21 @@
 import os
 
-from PySide6.QtCore import QObject, QTimer, Slot
+from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from PySide6.QtWidgets import QMainWindow
 
-import qBarliman.utils.log as l
-from qBarliman.constants import TMP_DIR
-from qBarliman.models.scheme_document import SchemeDocument
-from qBarliman.operations.scheme_execution_service import (
-    SchemeExecutionService,
-    TaskStatus,
-)
-from qBarliman.utils.load_interpreter import load_interpreter_code
-from qBarliman.utils.query_builder import QueryBuilder, SchemeQueryType
-from qBarliman.utils.rainbowp import rainbowp
-from qBarliman.views.editor_window_ui import EditorWindowUI
+import utils.log as l
+from config.constants import TMP_DIR
+from models.scheme_document import SchemeDocument
+from operations.scheme_execution_service import SchemeExecutionService, TaskStatus
+from utils.load_interpreter import load_interpreter_code
+from utils.query_builder import QueryBuilder, SchemeQueryType
+from utils.rainbowp import rainbowp
+from views.editor_window_ui import EditorWindowUI
 
 
 class EditorWindowController(QObject):
+    process_started = Signal(str)
+
     def __init__(
         self,
         parent=None,
@@ -32,7 +31,7 @@ class EditorWindowController(QObject):
 
         self.query_builder = query_builder or QueryBuilder(load_interpreter_code())
         self.execution_service = execution_service or SchemeExecutionService()
-        self.model = SchemeDocument()
+        self.model = SchemeDocument(task_id=self.execution_service.get_next_task_id())
 
         # Debounce timer
         self.run_code_timer = QTimer()
@@ -89,9 +88,10 @@ class EditorWindowController(QObject):
         # Set up signals and UI
         self.setup_connections()
 
-        self.model.definitionTextChanged.emit(self.model.definition_text)
+        self.model.definitionTextChanged.emit(self.model.definition_text, "initial", 0)
+        self.process_started.connect(self.view.update_ui)
         self.model.testCasesChanged.emit(
-            self.model.test_inputs, self.model.test_expected
+            self.model.test_inputs, self.model.test_expected, "initial", 0
         )
         self.main_window.show()
         self.run_code("simple")  # Initial run
@@ -193,13 +193,10 @@ class EditorWindowController(QObject):
 
     def setup_connections(self):
         self.model.definitionTextChanged.connect(
-            lambda text: self.view.update_ui("definition_text", text)
+            self.view.schemeDefinitionView.setPlainText
         )
-        self.model.testCasesChanged.connect(
-            lambda inputs, expected: self.view.update_ui(
-                "test_cases", (inputs, expected)
-            )
-        )
+        self.model.testCasesChanged.connect(self.view.set_test_cases)
+        self.model.statusChanged.connect(self.view.set_definition_status)
 
         self.view.schemeDefinitionView.codeTextChanged.connect(
             self.model.update_definition_text
@@ -207,11 +204,12 @@ class EditorWindowController(QObject):
 
         for i, input_field in enumerate(self.view.testInputs):
             input_field.textModified.connect(
-                lambda text, idx=i: self.model.update_test_input(idx + 1, text)
+                lambda text, i=i: self.model.update_test_input(i + 1, text)
             )
+
         for i, output_field in enumerate(self.view.testExpectedOutputs):
             output_field.textModified.connect(
-                lambda text, idx=i: self.model.update_test_expected(idx + 1, text)
+                lambda text, i=i: self.model.update_test_expected(i + 1, text)
             )
 
         self.model.definitionTextChanged.connect(self._on_definition_text_changed)
@@ -241,12 +239,15 @@ class EditorWindowController(QObject):
         if cfg["kill"][outcome]:
             self.maybe_kill_alltests()
 
+        # Emit standardized signal
+        self.model.statusChanged.emit(result.status, result.task_type, result.task_id)
+
     @Slot(str)
-    def _handle_process_started(self, task_type):
+    def _handle_process_started(self, task_type, task_id):
         if task_type == "simple":
             self.view.update_ui("definition_status", ("???", TaskStatus.THINKING))
         elif task_type == "allTests":
             self.view.update_ui("best_guess_status", ("???", TaskStatus.THINKING))
         elif task_type.startswith("test"):
-            index = int(task_type[4:]) - 1
-            self.view.update_ui("test_status", (index, "???", TaskStatus.THINKING))
+            int(task_type[4:]) - 1
+            self.process_started.emit(task_id)

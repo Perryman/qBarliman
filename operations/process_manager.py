@@ -3,7 +3,7 @@ from typing import Deque
 
 from PySide6.QtCore import QObject, QProcess, Signal, Slot
 
-from qBarliman.utils import log as l
+from utils import log as l
 
 
 class ProcessManager(QObject):
@@ -53,6 +53,7 @@ class ProcessManager(QObject):
                 "enqueue_process - Process Already Running or Starting"
             )
 
+    @Slot()
     def _start_next_process(self):
         """Start the next process in the queue."""
         self._log_process_state("_start_next_process - Entry")
@@ -65,6 +66,7 @@ class ProcessManager(QObject):
         else:
             self._log_process_state("_start_next_process - Queue Empty")
 
+    @Slot()
     def _handle_stdout(self):
         if data := self._process.readAllStandardOutput().data().decode():
             self.processOutput.emit(data, "", self._current_task_type)

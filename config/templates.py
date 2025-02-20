@@ -1,6 +1,6 @@
 from string import Template
 
-from qBarliman.constants import (
+from config.constants import (
     ALLTESTS_STRING_1,
     ALLTESTS_STRING_2,
     EVAL_FLAGS_COMPLETE,
@@ -13,8 +13,8 @@ from qBarliman.constants import (
     LOAD_MK_SCM,
     LOAD_MK_VICARE_SCM,
 )
-from qBarliman.utils import log as l
-from qBarliman.utils.rainbowp import rainbowp
+from utils import log as l
+from utils.rainbowp import rainbowp
 
 """
 Template definitions for query strings and other frequently used code.

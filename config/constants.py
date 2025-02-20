@@ -5,7 +5,7 @@ import sys
 import tempfile
 from typing import Optional
 
-from qBarliman.utils import log as l
+from utils import log as l
 
 # Query string (QS) file names
 
@@ -29,7 +29,9 @@ TMP_DIR = tempfile.gettempdir()
 TMP_DIR = os.path.join(TMP_DIR, "qBarliman")
 if not os.path.exists(TMP_DIR):
     os.makedirs(TMP_DIR)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(CONFIG_DIR)
+l.info(f"{BASE_DIR=}")
 MINIKANREN_ROOT = os.path.join(BASE_DIR, "minikanren", "core")
 REL_INTERP_DIR = os.path.join(BASE_DIR, "minikanren", "rel-interp")
 TEMPLATES_DIR = os.path.join(BASE_DIR, "minikanren", "templates")

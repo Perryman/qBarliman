@@ -5,3 +5,6 @@ cocoa/Barliman.xcodeproj/project.xcworkspace/xcuserdata/
 **.vscode
 .windsurfrules
 .*cache*
+appmap*
+tmp
+Pipfile*

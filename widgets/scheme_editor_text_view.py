@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QKeyEvent, QUndoStack
 from PySide6.QtWidgets import QTextEdit
 
@@ -21,6 +21,7 @@ class SchemeEditorTextView(QTextEdit):
         self.setTabStopDistance(20)  # Equivalent to 4 spaces
         self._block_text_changed_signal = False  # Add flag to block signal emission
 
+    @Slot(QKeyEvent)
     def keyPressEvent(self, event: QKeyEvent):
         # Disable listener while processing key event
         self.setUpdatesEnabled(False)
@@ -42,6 +43,7 @@ class SchemeEditorTextView(QTextEdit):
         if not self._block_text_changed_signal:
             self.codeTextChanged.emit(self.toPlainText())
 
+    @Slot(str)
     def _insert_gensym(self, var_to_insert):
         cursor = self.textCursor()
         current_pos = cursor.position()
@@ -53,17 +55,20 @@ class SchemeEditorTextView(QTextEdit):
         cursor.setPosition(current_pos + len(var_to_insert))
         self.setTextCursor(cursor)
 
+    @Slot()
     def findNextUnusedLogicVar(self) -> str:
         current_text = self.toPlainText()
         return next((lv for lv in self.logic_vars if lv not in current_text), "")
 
+    @Slot()
     def canUndo(self) -> bool:
         return self.document().isUndoAvailable()
 
+    @Slot()
     def canRedo(self) -> bool:
         return self.document().isRedoAvailable()
 
-    # Ensure tab behavior matches the original
+    @Slot()
     def insertFromMimeData(self, source):
         # Convert tabs to spaces on paste
         if source.hasText():
@@ -74,16 +79,13 @@ class SchemeEditorTextView(QTextEdit):
         else:
             super().insertFromMimeData(source)
 
-    def setPlainText(self, text: str, cursor_pos=None):
+    @Slot(str)
+    def setPlainText(self, text: str):
         """Override setPlainText to preserve cursor and emit signal."""
         self._block_text_changed_signal = True  # Block signal before change
         old_cursor_pos = self.textCursor().position()
         super().setPlainText(text)
-        if cursor_pos is not None:
-            cursor = self.textCursor()  # Get the current cursor
-            cursor.setPosition(cursor_pos)  # Set the position
-        else:
-            cursor = self.textCursor()  # Get the current cursor
-            cursor.setPosition(old_cursor_pos)  # Restore old position
+        cursor = self.textCursor()  # Get the current cursor
+        cursor.setPosition(old_cursor_pos)  # Restore old position
         self.setTextCursor(cursor)  # Apply the modified cursor
         self._block_text_changed_signal = False  # Re-enable signal

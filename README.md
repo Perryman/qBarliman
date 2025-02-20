@@ -59,32 +59,6 @@ $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", [System.Environ
 
 ---
 
-## Project Structure
-
-```sh
-├── qBarliman
-│   ├── constants.py
-│   ├── controllers
-│   │   ├── editor_window_controller.py
-│   ├── minikanren
-│   │   ├── core
-│   │   ├── rel-interp
-│   │   └── templates
-│   ├── operations
-│   │   └── run_scheme_operation.py
-│   ├── utils
-│   │   ├── constrained_splitter.py
-│   │   └── iterable_helpers.py
-│   └── widgets
-│       ├── scheme_editor_text_view.py
-│       └── spinner_widget.py
-├── qBarliman.py
-├── README.md
-└── requirements.txt
-```
-
----
-
 ### Barliman in action
 
 [Relational Interpreters, Program Synthesis, and Barliman - Code Mesh 2017](https://www.youtube.com/watch?v=RVDCRlW1f1Y)

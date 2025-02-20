@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QGridLayout,
@@ -9,9 +9,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from qBarliman.operations.scheme_execution_service import TaskStatus
-from qBarliman.widgets.scheme_editor_line_edit import SchemeEditorLineEdit
-from qBarliman.widgets.scheme_editor_text_view import SchemeEditorTextView
+from operations.scheme_execution_service import TaskStatus
+from widgets.scheme_editor_line_edit import SchemeEditorLineEdit
+from widgets.scheme_editor_text_view import SchemeEditorTextView
 
 
 class EditorWindowUI(QWidget):
@@ -34,6 +34,10 @@ class EditorWindowUI(QWidget):
         # Declarative UI update map: signal_name -> (widget, update_function)
         self._widget_updaters = {
             "definition_text": (
+                self.schemeDefinitionView,
+                lambda w, text: w.setPlainText(text),
+            ),
+            "definition_update": (
                 self.schemeDefinitionView,
                 lambda w, text: w.setPlainText(text),
             ),
@@ -116,7 +120,8 @@ class EditorWindowUI(QWidget):
 
         self.mainLayout.addLayout(self.testsGrid)
 
-    def update_ui(self, update_type, data):
+    @Slot(str, str, int)
+    def update_ui(self, update_type: str, data: str, task_id: int):
         """
         Declarative UI update method.
 
@@ -131,6 +136,7 @@ class EditorWindowUI(QWidget):
             else:
                 update_func(data)
 
+    @Slot(SchemeEditorTextView, str)
     def set_definition_text(self, widget: SchemeEditorTextView, text: str):
         """Updates the definition text while preserving cursor position."""
         if widget and text != widget.toPlainText():  # Only update if content changed

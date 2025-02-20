@@ -34,7 +34,7 @@ lint:
   ignore:
     - linters: [ALL]
       paths:
-        - qBarliman/minikanren/**/*.md
+        - minikanren/**/*.md
 actions:
   disabled:
     - trunk-announce

@@ -6,9 +6,9 @@ from typing import Optional
 
 from PySide6.QtCore import QObject, Signal
 
-from qBarliman.constants import SCHEME_EXECUTABLE
-from qBarliman.operations.process_manager import ProcessManager
-from qBarliman.utils import log as l
+from config.constants import SCHEME_EXECUTABLE
+from operations.process_manager import ProcessManager
+from utils import log as l
 
 
 class TaskStatus(Enum):

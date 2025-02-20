@@ -1,14 +1,14 @@
 from typing import List, Optional
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, Slot
 
-from qBarliman.utils import log as l
-
-from ..constants import (
+from config.constants import (
     DEFAULT_DEFINITIONS,
     DEFAULT_TEST_EXPECTED_OUTPUTS,
     DEFAULT_TEST_INPUTS,
 )
+from utils import log as l
+
 from .scheme_document_data import SchemeDocumentData
 
 
@@ -16,18 +16,23 @@ class SchemeDocument(QObject):
     """QObject wrapper around an immutable SchemeDocumentData."""
 
     # Signals for changes.
-    definitionTextChanged = Signal(str)
-    testCasesChanged = Signal(list, list)
-    statusChanged = Signal(str)
+    definitionTextChanged = Signal(str, str, int)  # task result, task name, task_id
+    testCasesChanged = Signal(
+        list, list, str, int
+    )  # inputs, expected, task name, task_id
+    statusChanged = Signal(str, str, int)  # status, task name, task_id
 
     def __init__(
         self,
         definition_text: str = "\n".join(DEFAULT_DEFINITIONS),
         test_inputs: Optional[List[str]] = None,
         test_expected: Optional[List[str]] = None,
+        task_id: int = 0,
     ):
         super().__init__()
+        self._task_id = task_id
         self._data = SchemeDocumentData(
+            task_id=self._task_id,
             definition_text=definition_text,
             test_inputs=(
                 test_inputs if test_inputs is not None else DEFAULT_TEST_INPUTS.copy()
@@ -38,8 +43,8 @@ class SchemeDocument(QObject):
                 else DEFAULT_TEST_EXPECTED_OUTPUTS.copy()
             ),
         )
-        self.definitionTextChanged.emit(self.definition_text)
-        self.testCasesChanged.emit(self.test_inputs, self.test_expected)
+        self.definitionTextChanged.emit(self.definition_text, "initial", self._task_id)
+        self.testCasesChanged.emit(self.test_inputs, self.test_expected, "initial", self._task_id)
 
     @property
     def definition_text(self) -> str:
@@ -63,14 +68,15 @@ class SchemeDocument(QObject):
     def is_valid(self) -> bool:
         return self._data.is_valid
 
+    @Slot(str)
     def update_definition_text(self, new_text: str) -> None:
         if new_text != self._data.definition_text:  # Only update if text changed
             self._data = self._data.update_definition_text(new_text)
-            self.definitionTextChanged.emit(new_text)
+            self.definitionTextChanged.emit(new_text, "definition_update", self._task_id)
 
+    @Slot(int, str)
     def update_test_input(self, test_number: int, value: str) -> None:
         index = test_number - 1
-        # Convert value to string and ensure we're storing string values
         str_value = value if value is not None else ""
         if (
             0 <= index < len(self._data.test_inputs)
@@ -78,9 +84,13 @@ class SchemeDocument(QObject):
         ):
             self._data = self._data.update_test_input(index, str_value)
             self.testCasesChanged.emit(
-                self._data.test_inputs.copy(), self._data.test_expected.copy()
+                self._data.test_inputs.copy(),
+                self._data.test_expected.copy(),
+                "test_update",
+                self._task_id,
             )
 
+    @Slot(int, str)
     def update_test_expected(self, test_number: int, value: str) -> None:
         index = test_number - 1
         # Convert value to string and ensure we're storing string values

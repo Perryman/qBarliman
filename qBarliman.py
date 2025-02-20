@@ -4,7 +4,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
-from qBarliman.controllers.editor_window_controller import EditorWindowController
+from controllers.editor_window_controller import EditorWindowController
 
 
 def signal_handler(signum, frame):

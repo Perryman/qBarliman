@@ -3,9 +3,8 @@ from typing import Any, Dict, Optional, Protocol
 
 from PySide6.QtCore import QObject, Signal
 
-from qBarliman.constants import LOAD_MK_SCM, LOAD_MK_VICARE_SCM
-from qBarliman.models.scheme_document_data import SchemeDocumentData
-from qBarliman.templates import (
+from config.constants import LOAD_MK_SCM, LOAD_MK_VICARE_SCM
+from config.templates import (
     ALL_TEST_WRITE_T,
     MAKE_NEW_TEST_N_QUERY_STRING_T,
     MAKE_QUERY_SIMPLE_FOR_MONDO_SCHEME_T,
@@ -13,11 +12,10 @@ from qBarliman.templates import (
     PARSE_ANS_STRING_T,
     unroll,
 )
-from qBarliman.utils import log as l
-from qBarliman.utils.load_interpreter import (
-    load_interpreter_code,
-)
-from qBarliman.utils.rainbowp import rainbowp
+from models.scheme_document_data import SchemeDocumentData
+from utils import log as l
+from utils.load_interpreter import load_interpreter_code
+from utils.rainbowp import rainbowp
 
 
 class SchemeQueryType(Enum):

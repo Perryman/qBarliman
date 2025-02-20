@@ -1,4 +1,4 @@
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import QLineEdit
 
 
@@ -12,8 +12,9 @@ class SchemeEditorLineEdit(QLineEdit):
         self._block_signals = False
         self.textChanged.connect(self._on_text_changed)
 
+    @Slot(str)
     def setText(self, text: str):
-        """Override setText to preserve cursor position."""
+        """Override setText to preserve cursor position and emit signal."""
         if self.text() == text:
             return
 
@@ -23,6 +24,7 @@ class SchemeEditorLineEdit(QLineEdit):
         self.setCursorPosition(min(cursor_pos, len(text)))
         self._block_signals = False
 
+    @Slot(str)
     def _on_text_changed(self, text: str):
         """Handle text changes and emit our custom signal."""
         if not self._block_signals:
