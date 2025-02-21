@@ -1,13 +1,32 @@
+# scheme_execution_service.py
+"""Service for executing and managing Scheme/miniKanren queries.
+
+This class handles the execution of Scheme code, including query preprocessing,
+execution, and result handling. It manages the interface between the application
+and the Scheme interpreter.
+
+Key responsibilities:
+    - Interpret and execute Scheme queries
+    - Handle query preprocessing and validation
+    - Manage query results and error handling
+    - Coordinate with process_manager for heavy computations
+    - Parse and format Scheme output
+    - Emit query results and status updates
+
+Dependencies:
+    - process_manager
+    - Custom Scheme interpreter interface
+"""
 import os
 import time
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional
 
+from operations.process_manager import ProcessManager
 from PySide6.QtCore import QObject, Signal
 
 from config.constants import SCHEME_EXECUTABLE
-from operations.process_manager import ProcessManager
 from utils import log as l
 
 

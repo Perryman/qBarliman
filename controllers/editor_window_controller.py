@@ -1,12 +1,31 @@
+# editor_window_controller.py
+"""Controller class managing the main editor window and its components.
+
+This class serves as the primary coordinator between the UI layer and the
+business logic layer. It handles initialization of all major subsystems and
+manages the communication flow between components.
+
+Key responsibilities:
+    - Initialize and connect UI components
+    - Set up observer patterns for component communication
+    - Manage signal/slot connections between UI and task management
+    - Coordinate state changes between UI and business logic
+    - Handle window-level events and user interactions
+
+Dependencies:
+    - editor_window_ui
+    - task_manager
+    - PyQt6 signals/slots infrastructure
+"""
 import os
 
+from operations.scheme_execution_service import SchemeExecutionService, TaskStatus
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from PySide6.QtWidgets import QMainWindow
 
 import utils.log as l
 from config.constants import TMP_DIR
 from models.scheme_document import SchemeDocument
-from operations.scheme_execution_service import SchemeExecutionService, TaskStatus
 from utils.load_interpreter import load_interpreter_code
 from utils.query_builder import QueryBuilder, SchemeQueryType
 from utils.rainbowp import rainbowp

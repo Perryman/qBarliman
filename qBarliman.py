@@ -1,4 +1,23 @@
 #!/usr/bin/env python3
+# qBarliman.py
+"""Main application entry point for qBarliman.
+
+This module serves as the bootstrap for the qBarliman application, a Qt-based GUI
+for running miniKanren/Scheme queries. It initializes the main application window
+and sets up the core application infrastructure.
+
+Key responsibilities:
+    - Application initialization and configuration
+    - Main window creation
+    - Global exception handling setup
+    - Resource management initialization
+    - Logging configuration
+
+Dependencies:
+    - PyQt6
+    - EditorWindowController
+"""
+
 import signal
 import sys
 

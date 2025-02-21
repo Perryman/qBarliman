@@ -44,7 +44,9 @@ class SchemeDocument(QObject):
             ),
         )
         self.definitionTextChanged.emit(self.definition_text, "initial", self._task_id)
-        self.testCasesChanged.emit(self.test_inputs, self.test_expected, "initial", self._task_id)
+        self.testCasesChanged.emit(
+            self.test_inputs, self.test_expected, "initial", self._task_id
+        )
 
     @property
     def definition_text(self) -> str:
@@ -72,7 +74,9 @@ class SchemeDocument(QObject):
     def update_definition_text(self, new_text: str) -> None:
         if new_text != self._data.definition_text:  # Only update if text changed
             self._data = self._data.update_definition_text(new_text)
-            self.definitionTextChanged.emit(new_text, "definition_update", self._task_id)
+            self.definitionTextChanged.emit(
+                new_text, "definition_update", self._task_id
+            )
 
     @Slot(int, str)
     def update_test_input(self, test_number: int, value: str) -> None:

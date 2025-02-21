@@ -1,3 +1,23 @@
+# query_builder.py
+"""Query construction and validation service.
+
+This class handles the construction and validation of Scheme/miniKanren queries
+based on user input and document state. It ensures queries are well-formed and
+ready for execution.
+
+Key responsibilities:
+    - Construct valid Scheme queries
+    - Validate query syntax and structure
+    - Transform user input into query format
+    - Handle query templates and parameters
+    - Emit constructed queries
+    - Maintain query construction rules
+
+Dependencies:
+    - scheme_document
+    - Custom query validation rules
+    - Query template system
+"""
 from enum import Enum, auto
 from typing import Any, Dict, Optional, Protocol
 

@@ -1,3 +1,23 @@
+# editor_window_ui.py
+"""User interface implementation for the main editor window.
+
+This class handles all UI-related functionality, including layout construction,
+widget management, and user interaction handling. It maintains a strict separation
+from business logic, communicating only through signals and slots.
+
+Key responsibilities:
+    - Build and maintain the UI layout
+    - Handle user input events
+    - Manage widget states and updates
+    - Emit signals for user interactions
+    - Update display based on received data
+    - Manage UI-specific settings and preferences
+
+Dependencies:
+    - PyQt6
+    - Qt Designer generated UI file (if applicable)
+"""
+from operations.scheme_execution_service import TaskStatus
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
@@ -9,7 +29,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from operations.scheme_execution_service import TaskStatus
 from widgets.scheme_editor_line_edit import SchemeEditorLineEdit
 from widgets.scheme_editor_text_view import SchemeEditorTextView
 

@@ -1,3 +1,22 @@
+# process_manager.py
+"""Process creation and management service.
+
+This class handles the creation, monitoring, and termination of external processes,
+particularly focused on Scheme interpreter processes. It provides a robust interface
+for process communication and error handling.
+
+Key responsibilities:
+    - Create and manage external processes
+    - Handle process I/O streams
+    - Monitor process health and status
+    - Manage process termination
+    - Handle process errors and timeouts
+    - Emit process output and status updates
+
+Dependencies:
+    - Python subprocess module
+    - PyQt6 process management features
+"""
 import collections
 from typing import Deque
 
