@@ -19,3 +19,7 @@ Dependencies:
     - query_builder
     - PyQt6 concurrent features
 """
+
+
+class TaskManager:
+    def __init__(self): ...

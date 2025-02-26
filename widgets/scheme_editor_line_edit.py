@@ -5,12 +5,13 @@ from PySide6.QtWidgets import QLineEdit
 class SchemeEditorLineEdit(QLineEdit):
     """Custom QLineEdit that maintains cursor position during programmatic updates."""
 
-    textModified = Signal(str)
+    textEdited = Signal(int, str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, test_num=None):
         super().__init__(parent)
         self._block_signals = False
-        self.textChanged.connect(self._on_text_changed)
+        self.test_num = test_num
+        self.textEdited.connect(self._on_text_edited)
 
     @Slot(str)
     def setText(self, text: str):
@@ -24,8 +25,7 @@ class SchemeEditorLineEdit(QLineEdit):
         self.setCursorPosition(min(cursor_pos, len(text)))
         self._block_signals = False
 
-    @Slot(str)
-    def _on_text_changed(self, text: str):
-        """Handle text changes and emit our custom signal."""
+    @Slot(int, str)
+    def _on_text_edited(self, index, text):
         if not self._block_signals:
-            self.textModified.emit(text)
+            self.textEdited.emit(index, text)

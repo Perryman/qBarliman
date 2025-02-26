@@ -32,7 +32,6 @@ class SchemeDocument(QObject):
         super().__init__()
         self._task_id = task_id
         self._data = SchemeDocumentData(
-            task_id=self._task_id,
             definition_text=definition_text,
             test_inputs=(
                 test_inputs if test_inputs is not None else DEFAULT_TEST_INPUTS.copy()
@@ -105,7 +104,10 @@ class SchemeDocument(QObject):
         ):
             self._data = self._data.update_test_expected(index, str_value)
             self.testCasesChanged.emit(
-                self._data.test_inputs.copy(), self._data.test_expected.copy()
+                self._data.test_inputs.copy(),
+                self._data.test_expected.copy(),
+                "test_update",
+                self._task_id,
             )
 
     def update_tests(self, inputs: List[str], expected: List[str]) -> None:
@@ -119,10 +121,29 @@ class SchemeDocument(QObject):
         ):
             self._data = self._data.update_tests(str_inputs, str_expected)
             self.testCasesChanged.emit(
-                self._data.test_inputs.copy(), self._data.test_expected.copy()
+                self._data.test_inputs.copy(),
+                self._data.test_expected.copy(),
+                "test_update",
+                self._task_id,
             )
 
     def validate(self) -> bool:
         new_data = self._data.validate()
         self._data = new_data
         return new_data.is_valid
+
+    def get_test_case(self, index):
+        """Get test case at the specified index."""
+        # This is a simple implementation - could be expanded with a TestCase class
+        if 0 <= index < len(self._data.test_inputs):
+            # Return a simple dict-like object for now
+            class TestCase:
+                def __init__(self, input_text, expected_text):
+                    self.input_text = input_text
+                    self.expected_text = expected_text
+                    self.status = type("obj", (object,), {"message": "", "status": ""})
+
+            return TestCase(
+                self._data.test_inputs[index], self._data.test_expected[index]
+            )
+        return None

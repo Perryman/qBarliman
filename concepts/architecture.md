@@ -1,5 +1,20 @@
 # qBarliman architecture
 
+## Reactive Signal-Driven Architecture (RSDA)
+
+qBarliman implements a Reactive Signal-Driven Architecture that combines several modern patterns:
+
+- **Reactive State Propagation**: Changes to state trigger UI updates through signals
+- **Unidirectional Data Flow**: Data flows predictably from UI → Model → Processing → Model → UI
+- **Declarative Component Configuration**: UI elements defined through data structures
+- **Dynamic Signal Wiring**: Signals and slots connected programmatically
+- **Functional Slot Factories**: Reusable functions that create specialized slot handlers
+- **Component Registry Pattern**: UI elements stored in dictionaries for programmatic access
+- **Centralized State Management**: Single source of truth drives all UI updates
+- **Signal-Based Initialization**: Default values flow through the same paths as runtime updates
+
+## Component Structure
+
 - **`qBarliman.py`:**
 
   - Application entry point.
@@ -7,116 +22,113 @@
 
 - **`controllers/editor_window_controller.py`:**
 
-  - Creates and connects `View`, `ViewModel`, `TaskManager`, `SchemeDocument`.
-  - Handles top-level UI events (like window showing).
+  - Creates and wires components using dynamic signal connections
+  - Establishes unidirectional data flow between components
+  - Configures signal-slot pathways for state propagation
 
 - **`viewmodels/editor_window_viewmodel.py`:**
 
-  - Holds observable UI state (using `Observable` properties).
-  - Reacts to model changes and user input (via signals).
-  - Commands `TaskManager` to run tasks.
-  - Updates UI state based on task results.
+  - Implements centralized state management with observable properties
+  - Maintains the single source of truth for UI state
+  - Emits signals when state changes occur
+  - Processes incoming state change requests from UI
 
 - **`services/task_manager.py`:**
 
-  - Manages the queue of Scheme tasks.
-  - Interacts with `SchemeExecutionService` to run/kill processes.
-  - Receives commands from `EditorWindowViewModel`.
+  - Responds to state change signals from ViewModel
+  - Manages task lifecycle through the signal system
+  - Uses functional slot factories for specialized task handling
 
 - **`services/scheme_execution_service.py`:**
 
   - Executes Scheme code using `ProcessManager`.
-  - Handles process output/errors.
-  - Emits signals for task results.
+  - Emits signals with execution results feeding back into the state system
+  - Maintains stateless execution pattern - all state exists in ViewModel
 
 - **`services/process_manager.py`:**
-- Manages the external Scheme processes.
-- Starts processes. Kills processesmachinations
+
+  - Manages external Scheme processes
+  - Converts process events into signals for the reactive system
 
 - **`views/editor_window_ui.py`:**
 
-  - Defines the UI layout (declarative).
-  - Binds UI elements to `ViewModel` properties (via `update_ui`).
-  - Emits signals for user input (text changes, etc.).
+  - Implements declarative component configuration
+  - Uses component registry pattern for programmatic UI access
+  - Connects UI elements to signal pathways via dynamic signal wiring
+  - UI elements reflect state without maintaining state themselves
 
 - **`models/scheme_document.py`:**
 
-  - Wraps `SchemeDocumentData`.
-  - Provides methods to update the document data (triggering signals).
+  - Emits state change signals that integrate with the reactive system
+  - Provides state update methods that maintain unidirectional data flow
 
 - **`models/scheme_document_data.py`:**
 
-  - Immutable data class holding the Scheme document's content.
+  - Immutable data structures that represent system state
+  - Designed for efficient state comparison and change detection
 
 - **`widgets/`:**
 
-  - Custom Qt Widgets.
+  - Custom Qt Widgets designed for the reactive architecture
+  - Components emit signals but don't maintain application state
 
 - **`utils/`:**
 
-  - Utility functions and classes (logging, query building, etc.)
+  - Signal utility functions and factories
+  - State transformation helpers
 
 - **`templates.py`:** Holds scheme code templates
 - **`constants.py`:** Holds project-wide constant variables and names
 
-Here are the names of the relevant UI elements and ViewModel properties, broken down by category:
+## UI and ViewModel Mapping
 
-**UI Elements (in `EditorWindowUI`):**
-
-- **Definition Text:**
-
-  - `self.schemeDefinitionView` (a `SchemeEditorTextView`)
-
-- **Best Guess:**
-
-  - `self.bestGuessView` (a `SchemeEditorTextView`)
-
-- **Test Inputs (1-6):**
-
-  - `self.testInputs` (a _list_ of `SchemeEditorLineEdit` instances)
-    - Individual inputs: `self.testInputs[0]`, `self.testInputs[1]`, ..., `self.testInputs[5]`
-
-- **Test Expected Outputs (1-6):**
-
-  - `self.testExpectedOutputs` (a _list_ of `SchemeEditorLineEdit` instances)
-    - Individual outputs: `self.testExpectedOutputs[0]`, `self.testExpectedOutputs[1]`, ..., `self.testExpectedOutputs[5]`
-
-- **Status Dialogs/Labels:**
-  - **Definition Status:** `self.definitionStatusLabel` (a `QLabel`)
-  - **Best Guess Status:** `self.bestGuessStatusLabel` (a `QLabel`)
-  - **Test Statuses (1-6):** `self.testStatusLabels` (a _list_ of `QLabel` instances)
-    - Individual statuses: `self.testStatusLabels[0]`, `self.testStatusLabels[1]`, ..., `self.testStatusLabels[5]`
-  - **Error output**: `self.errorOutput`
-
-**ViewModel Properties (in `EditorWindowViewModel`):**
+**UI Component Registry (in `EditorWindowUI`):**
 
 - **Definition Text:**
 
-  - `self.definition_text` (an `Observable` property)
+  - `self.components["definition"]["view"]` (a `SchemeEditorTextView`)
 
 - **Best Guess:**
 
-  - `self.best_guess` (an `Observable` property)
+  - `self.components["best_guess"]["view"]` (a `SchemeEditorTextView`)
 
 - **Test Inputs:**
 
-  - `self.test_inputs` (an `Observable` property of type `list`)
+  - `self.components["tests"][test_index]["input"]["view"]` (a `SchemeEditorLineEdit`)
 
 - **Test Expected Outputs:**
 
-  - `self.test_expected` (an `Observable` property of type `list`)
+  - `self.components["tests"][test_index]["expected"]["view"]` (a `SchemeEditorLineEdit`)
 
-- **Status:**
-  _ **Definition Status:** `self.definition_status` (an `Observable` property, a tuple: `(text, TaskStatus)`)
-  _ **Best Guess Status:** `self.best_guess_status` (an `Observable` property, a tuple: `(time_string, TaskStatus)`)
+- **Status Elements:**
+  - `self.components["definition"]["status"]` (a `QLabel`)
+  - `self.components["best_guess"]["status"]` (a `QLabel`)
+  - `self.components["tests"][test_index]["status"]` (a `QLabel`)
+  - `self.components["error_output"]` (a `QTextEdit`)
 
-  - **Test Statuses:** `self.test_statuses` (an `Observable` property, a _list_ of tuples: `[(index, time_string, TaskStatus), ...]`)
-  - **Error Output:** `self.error_output` (Observable property of str)
-    **Key Points:**
+**ViewModel State (in `EditorWindowViewModel`):**
 
-- The UI elements are accessed directly on the `self.view` instance within the `EditorWindowController`.
-- The ViewModel properties are accessed on the `self.view_model` instance within the `EditorWindowController`.
-- Lists are used for the test inputs, expected outputs, and status labels, reflecting the multiple test cases. You access individual elements using indexing (e.g., `self.view.testInputs[0]` for the first test input).
-- The viewmodel properties use the `Observable` class.
+- **Central State Object:**
 
-This provides a complete mapping between the UI elements you interact with and the underlying data representation in the ViewModel. This clear separation is fundamental to the Model-View-ViewModel (MVVM) and reactive programming approach.
+  - `self.state` (an observable state container)
+
+- **State Properties:**
+  - `self.state.definition.text` (observable string)
+  - `self.state.best_guess.text` (observable string)
+  - `self.state.tests[index].input` (observable string)
+  - `self.state.tests[index].expected` (observable string)
+  - `self.state.definition.status` (observable status object)
+  - `self.state.best_guess.status` (observable status object)
+  - `self.state.tests[index].status` (observable status object)
+  - `self.state.error_output` (observable string)
+
+## Signal Flow
+
+1. **UI Events** → emit signals with new input values
+2. **ViewModel** → receives signals, updates central state, emits state change signals
+3. **TaskManager** → receives state change signals, executes tasks based on new state
+4. **SchemeExecutionService** → processes tasks, emits result signals
+5. **ViewModel** → receives result signals, updates state, emits state change signals
+6. **UI Components** → receive state change signals, update their visual representation
+
+This architecture provides a predictable, unidirectional data flow while leveraging Qt's signal-slot mechanism. It eliminates direct dependencies between components, allowing for easier testing and maintenance.

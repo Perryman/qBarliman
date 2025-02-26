@@ -1,29 +1,106 @@
-| Component/Module              | Responsibility                                                                                                                                                                          | Interactions/Observations                                                                                                                                                                    |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| qBarliman.py                  | - Application entry point<br>- Sets up the overall application environment                                                                                                              | - Instantiates editor_window_controller.py to bootstrap the application                                                                                                                      |
-| editor_window_controller.py   | - Initializes necessary observer classes<br>- Connects these classes using PySide6’s @signal and @slot decorators at startup                                                            | - Simply wires up components for decoupled communication                                                                                                                                     |
-| editor_window_ui.py           | - Builds and manages the UI layout (text boxes, status labels, dynamic test sections, error box, etc.)<br>- Loads defaults from ./config/constants.py                                   | - Emits user interaction signals and updates display based on signals received                                                                                                               |
-| editor_window_task_manager.py | - Listens for UI changes<br>- Cancels running tasks and debounces input via a QTimer<br>- Initiates tasks based on current UI state<br>- Delegates specialized tasks                    | - Receives complete task state updates (e.g., task objects containing task_id, task_name, task_result, etc.)<br>- Delegates Scheme queries to the query builder and scheme execution service |
-| process_manager.py            | - Manages the creation, monitoring, and termination of external/internal processes                                                                                                      | - Invoked by the task manager or by the scheme execution service when heavy tasks require isolated processing                                                                                |
-| scheme_execution_service.py   | - Specializes in interpreting and executing Scheme (.scm) queries<br>- Handles pre-processing (parsing/validation) and post-processing<br>- May delegate heavy tasks to process manager | - Receives Scheme-specific tasks from the task manager (often indirectly via the query builder)                                                                                              |
-| scheme_document.py            | - Encapsulates the Scheme document model<br>- Holds field validation logic and status tracking<br>- Maintains the business logic state (logic array/state dict)                         | - Provides the business logic for Scheme validation to the UI and may influence query building                                                                                               |
-| query_builder.py              | - Constructs queries based on the current UI inputs and scheme document state<br>- Utilizes its internal logic to validate and formulate proper queries                                 | - Listens for signals related to user input/model changes<br>- Emits a signal with the new query to the task manager once the query is ready                                                 |
+# qBarliman Design - Reactive Signal-Driven Architecture
 
-### How the Query Builder Integrates
+| Component/Module            | Responsibility                                                                                                                                                                            | Interactions/Observations                                                                                                                                              |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| qBarliman.py                | - Application entry point - Sets up the overall application environment - Initializes the reactive signal framework                                                                       | - Instantiates the controller which initializes the reactive signal architecture                                                                                       |
+| editor_window_controller.py | - Establishes the component registry - Configures dynamic signal connections - Sets up unidirectional data flow pathways - Initializes centralized state management                       | - Creates functional slot factories for component interaction - Orchestrates the signal flow between components without tight coupling                                 |
+| editor_window_ui.py         | - Implements declarative component configuration - Creates the component registry for UI elements - Connects UI elements to the signal system - Loads defaults from ./config/constants.py | - Emits user interaction signals via standard pattern - Updates UI based on received state change signals - Does not maintain application state                        |
+| editor_window_viewmodel.py  | - Implements centralized state container - Manages observable properties - Processes state change requests - Maintains the single source of truth                                         | - Emits state change signals when properties are updated - Transforms UI signals into state updates - Drives the entire application through reactive state propagation |
+| task_manager.py             | - Reactively processes state changes - Uses functional slot factories for task handling - Manages task lifecycles - Signals task state transitions                                        | - Subscribes to state change signals - Emits task state signals - Delegates specialized tasks through the signal system                                                |
+| process_manager.py          | - Manages external process lifecycle events - Converts process I/O into signals - Maintains process isolation                                                                             | - Communicates process state through signals - Responds to task lifecycle signals                                                                                      |
+| scheme_execution_service.py | - Reactively executes Scheme code based on state changes - Transforms execution results into signals - Maintains stateless execution pattern                                              | - Subscribes to task signals - Emits execution result signals - Integrates with process manager through signal interface                                               |
+| scheme_document.py          | - Encapsulates the Scheme document model - Emits model change signals - Provides state update methods                                                                                     | - Integrates with the reactive signal system - Updates based on signals from the viewmodel - Emits signals when document state changes                                 |
+| query_builder.py            | - Reactively builds queries based on state changes - Implements signal-based validation - Emits query-ready signals                                                                       | - Subscribes to state change signals - Emits query-ready signals when valid queries are constructed - Participates in the unidirectional data flow                     |
 
-**Signal Reception:**
-The query builder listens to key signals from the UI or from the scheme document model that indicate when input has changed or when a new query should be derived.
+## Reactive Signal Flow
 
-**Query Construction:**
-Upon receiving these signals, the query builder builds (or updates) its internal query representation—ensuring that it adheres to the necessary syntax and logic.
+The Reactive Signal-Driven Architecture in qBarliman follows these key principles:
 
-**Emission of the Final Query:**
-Once validated, the query builder emits a new query signal. The task manager, which is subscribed to this signal, then takes the query and delegates its execution (perhaps via the scheme execution service and, if needed, the process manager).
+### 1. Unidirectional Data Flow
 
-### Conclusion
+Data flows in one direction through the application:
 
-Implementing a query builder adds clarity and separation:
+```txt
+UI Events → ViewModel → Task Manager → Execution Services → ViewModel → UI Update
+```
 
-- **Decoupling:** The UI doesn't have to handle query logic directly, and the task manager is freed from lower-level details.
-- **Flexibility:** If your query logic becomes more complex, it’s neatly encapsulated in its dedicated module.
-- **Scalability:** Future modifications related to query logic remain localized to query_builder.py.
+This predictable flow makes the application behavior easier to understand, test, and debug.
+
+### 2. Component Registry Pattern
+
+UI elements are organized in a registry for programmatic access:
+
+```python
+self.components = {
+    "definition": {
+        "view": SchemeEditorTextView(),
+        "status": QLabel()
+    },
+    "best_guess": {
+        "view": SchemeEditorTextView(),
+        "status": QLabel()
+    },
+    "tests": [
+        {
+            "input": { "view": SchemeEditorLineEdit() },
+            "expected": { "view": SchemeEditorLineEdit() },
+            "status": QLabel()
+        },
+        # Additional tests...
+    ]
+}
+```
+
+This structure enables dynamic signal wiring and consistent access patterns.
+
+### 3. Dynamic Signal Wiring
+
+Signals and slots are connected programmatically, creating a flexible communication network:
+
+```python
+# Example dynamic signal connection
+for test_index in range(6):
+    input_component = self.components["tests"][test_index]["input"]["view"]
+    input_component.textChanged.connect(
+        create_test_input_handler(self.view_model, test_index)
+    )
+```
+
+### 4. Functional Slot Factories
+
+Specialized slot handlers are created with factory functions:
+
+```python
+def create_test_input_handler(view_model, test_index):
+    def handle_test_input_change(text):
+        view_model.update_test_input(test_index, text)
+    return handle_test_input_change
+```
+
+This approach reduces boilerplate while maintaining the reactive pattern.
+
+### 5. Centralized State Management
+
+The ViewModel maintains all application state in a single observable container:
+
+```python
+self.state = ObservableState({
+    "definition": { "text": "", "status": None },
+    "best_guess": { "text": "", "status": None },
+    "tests": [
+        {"input": "", "expected": "", "status": None},
+        # Additional tests...
+    ],
+    "error_output": ""
+})
+```
+
+This centralization ensures consistency and enables predictable state transitions.
+
+## Benefits of the RSDA Pattern in qBarliman
+
+- **Decoupling:** Components communicate through signals without direct dependencies.
+- **Testability:** Each component can be tested in isolation by simulating signals.
+- **Consistency:** State changes follow a single predictable path.
+- **Flexibility:** New components can be added without modifying existing ones.
+- **Maintainability:** Localized changes have minimal impact on the system as a whole.

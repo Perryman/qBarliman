@@ -18,7 +18,7 @@ runtimes:
 lint:
   enabled:
     - semgrep@1.109.0
-    - checkov@3.2.372
+    - checkov@3.2.374
     - taplo@0.9.3
     - yamllint@1.35.1
     - sourcery@1.34.0
@@ -28,9 +28,9 @@ lint:
     - isort@6.0.0
     - markdownlint@0.44.0
     - osv-scanner@1.9.2
-    - prettier@3.5.1
-    - ruff@0.9.6
-    - trufflehog@3.88.11
+    - prettier@3.5.2
+    - ruff@0.9.7
+    - trufflehog@3.88.12
   ignore:
     - linters: [ALL]
       paths:

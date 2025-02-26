@@ -6,10 +6,10 @@ from PySide6.QtWidgets import QTextEdit
 class SchemeEditorTextView(QTextEdit):
     # List of logic variables to cycle through
     logic_vars = [f",{chr(c)}" for c in range(65, 91)]  # ,A ... ,Z
-    codeTextChanged = Signal(str)
+    textChanged = Signal(str)
 
     def __init__(self, parent=None):
-        super().__init__(parent=parent)
+        super().__init__(parent)
 
         self.setAcceptRichText(False)
 
@@ -41,7 +41,7 @@ class SchemeEditorTextView(QTextEdit):
         # Re-enable listener and emit signal if not blocked
         self.setUpdatesEnabled(True)
         if not self._block_text_changed_signal:
-            self.codeTextChanged.emit(self.toPlainText())
+            self.textChanged.emit(self.toPlainText())
 
     @Slot(str)
     def _insert_gensym(self, var_to_insert):
