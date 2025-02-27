@@ -1,6 +1,8 @@
 from PySide6.QtCore import QObject, Slot
 
 from models.editor_model import EditorModel
+from services.scheme_execution_service import SchemeExecutionService, TaskResult
+from services.task_manager import TaskManager
 from views.editor_window_ui import EditorWindowUI
 
 
@@ -10,9 +12,11 @@ class EditorWindowController(QObject):
 
         self.ui = EditorWindowUI(main_window)
         main_window.setCentralWidget(self.ui)
-
         self.ui_components = self.ui.get_component_registry()
         self.model = EditorModel(debug_prints=True)
+
+        self.scheme_execution_service = SchemeExecutionService()
+        self.task_manager = TaskManager(self.scheme_execution_service)
 
         self._connect_signals()
         self.model.state_changed.emit(self.model.state)
@@ -28,19 +32,44 @@ class EditorWindowController(QObject):
 
         for i in range(6):
             if test_input := ui.get(f"test_input_{i}"):
-                test_input.textChanged.connect(
+                test_input.textEdited.connect(
                     lambda index, text, i=i: model.update(f"tests.{i}.input", text)
                 )
 
             if test_expected := ui.get(f"test_expected_{i}"):
-                test_expected.textChanged.connect(
+                test_expected.textEdited.connect(
                     lambda index, text, i=i: model.update(f"tests.{i}.expected", text)
                 )
 
+        model.state_changed.connect(self.run_tests_on_change)
         model.state_changed.connect(self._handle_state_change)
+        self.task_manager.taskResultReady.connect(self.update_test_status)
+
+    @Slot(object)
+    def run_tests_on_change(self, state):
+        for i in range(min(len(state["tests"]), 6)):
+            self.run_test_case(i)
+
+    @Slot(int)
+    def run_test_case(self, test_index: int):
+        test_data = self.model.state["tests"][test_index]
+        input_text = test_data["input"]
+        expected_text = test_data["expected"]
+        if input_text.strip() and expected_text.strip():
+            self.task_manager.run_test(test_index, input_text, expected_text)
+
+    @Slot(TaskResult)
+    def update_test_status(self, result: TaskResult):
+        """Updates the status label of a test case based on the result."""
+        if result.task_type == "test" and result.test_index is not None:  # Modified
+            self.model.update(
+                f"tests.{result.test_index}.status",
+                (result.message, result.status.name),
+            )
 
     @Slot(object)
     def _handle_state_change(self, state):
+        """Updates all UI elements based on the model's state."""
         ui = self.ui_components
 
         ui["create_slot"]("definition.view")(state["definition"]["text"])
