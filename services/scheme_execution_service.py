@@ -23,10 +23,10 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional
 
-from operations.process_manager import ProcessManager
 from PySide6.QtCore import QObject, Signal
 
 from config.constants import SCHEME_EXECUTABLE
+from services.process_manager import ProcessManager
 from utils import log as l
 
 
@@ -72,9 +72,9 @@ class SchemeExecutionService(QObject):
         """Execute a Scheme script."""
         l.good(f"Execute: scheme --script {script_path}")
         if not os.path.exists(script_path):
-            return self._handle_execution_error(task_type, "Script file not found.")
+            return self._handle_script_error(task_type, "Script file not found.")
         if not SCHEME_EXECUTABLE:
-            return self._handle_execution_error(task_type, "SCHEME_EXECUTABLE not set.")
+            return self._handle_script_error(task_type, "SCHEME_EXECUTABLE not set.")
         self._task_type = task_type
         self.start_time = time.monotonic()
         self.processStarted.emit(task_type)
@@ -83,9 +83,9 @@ class SchemeExecutionService(QObject):
             SCHEME_EXECUTABLE, ["--script", script_path], task_type
         )
 
-    # TODO Rename this here and in `execute_scheme`
-    def _handle_execution_error(self, task_type, arg1):
-        result = TaskResult(task_type, TaskStatus.FAILED, arg1)
+    def _handle_script_error(self, task_type, error_message):
+        """Handle errors that occur before execution can start."""
+        result = TaskResult(task_type, TaskStatus.FAILED, error_message)
         self.taskResultReady.emit(result)
         return None
 
@@ -95,11 +95,15 @@ class SchemeExecutionService(QObject):
             try:
                 os.kill(pid, 15)  # SIGTERM
                 self._current_process_id = None  # Clear the ID
+                # Emit terminated status
+                result = TaskResult(
+                    self._task_type, TaskStatus.TERMINATED, "Process terminated"
+                )
+                self.taskResultReady.emit(result)
             except ProcessLookupError:
                 l.warn(f"Process with PID {pid} not found.")
             except OSError as e:  # more general, catch permission errors etc
                 l.warn(f"Error killing process {pid}: {e}")
-        # No else case
 
     def _handle_output(self, stdout: str, stderr: str):
         """Accumulate output from process."""
@@ -133,7 +137,7 @@ class SchemeExecutionService(QObject):
     def _process_output(
         self, output: str, task_type: str, exit_code: int = 0
     ) -> TaskResult:
-        """Processes output, determines status, *and* sets the color."""
+        """Processes output, determines status, and returns the appropriate TaskResult."""
         output = output.strip()
 
         if exit_code != 0:
@@ -151,7 +155,6 @@ class SchemeExecutionService(QObject):
         elif output in {"illegal-sexp-in-test/answer", "parse-error-in-test/answer"}:
             status = TaskStatus.SYNTAX_ERROR
             message = "Syntax Error in test"
-
         elif output == "fail":
             status = TaskStatus.FAILED
             message = "Failed"

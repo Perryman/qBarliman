@@ -5,6 +5,7 @@ from config.constants import (
     DEFAULT_TEST_EXPECTED_OUTPUTS,
     DEFAULT_TEST_INPUTS,
 )
+from utils import log as l
 
 
 class EditorModel(QObject):
@@ -12,7 +13,7 @@ class EditorModel(QObject):
 
     state_changed = Signal(object)
 
-    def __init__(self, emit_defaults=True):
+    def __init__(self, debug_prints=True):
         super().__init__()
         self._state = {
             "definition": {"text": "", "status": ("Idle", None)},
@@ -20,15 +21,8 @@ class EditorModel(QObject):
             "error_output": "",
             "tests": [],
         }
+        self._debug_prints = debug_prints
         self._apply_defaults()
-
-        # Only emit state if emit_defaults is True
-        if emit_defaults:
-            self.state_changed.emit(self._state)
-
-    def emit_state(self):
-        """Explicitly emit the current state."""
-        self.state_changed.emit(self._state)
 
     def _apply_defaults(self):
         """Apply default values to state."""
@@ -53,22 +47,25 @@ class EditorModel(QObject):
         for key in keys[:-1]:
             if key.isdigit():
                 key = int(key)
-                self._ensure_test_exists(key)  # Ensure the test exists!
+                self._ensure_test_exists(key)
             target = target[key]
 
         if target[keys[-1]] != value:
             target[keys[-1]] = value
 
-            # Special handling for test status updates.
             if "tests" in keys and ("input" in keys or "expected" in keys):
                 test_index = int(keys[keys.index("tests") + 1])
                 self._update_test_validity(test_index)
+
+            if self._debug_prints:
+                l.debug(f"State updated at path '{path}':")
+                l.debug(self._state)
 
             self.state_changed.emit(self._state)
 
     def update(self, path, value):
         """
-        General purpose update method.
+        General purpose update method.  This is the ONLY public update method.
 
         Args:
             path (str): Dot-separated path to the value within the state (e.g., "definition.text", "tests.0.input").
@@ -100,47 +97,3 @@ class EditorModel(QObject):
     @property
     def state(self):
         return self._state
-
-    def update_text(self, text):
-        """Update definition text."""
-        self.update("definition.text", text)
-
-    def update_test_input(self, index, text):
-        """Update test input."""
-        self.update(f"tests.{index}.input", text.strip())
-
-    def update_test_expected(self, index, text):
-        """Update test expected output."""
-        self.update(f"tests.{index}.expected", text.strip())
-
-    def update_definition_status(self, status):
-        """Update definition status."""
-        self.update("definition.status", status)
-
-    def update_best_guess(self, text, status="Ready"):
-        """Update best guess with new text and status."""
-        self.update("best_guess.text", text)
-        self.update("best_guess.status", status)
-
-    def update_error_output(self, text):
-        """Update error output."""
-        self.update("error_output", text)
-
-    def update_test_status(self, index, status):
-        """Update test status."""
-        self.update(f"tests.{index}.status", status)
-
-    def get_active_tests(self):
-        """Return only the valid, complete tests."""
-        return [
-            test
-            for test in self._state["tests"]
-            if test["input"].strip() and test["expected"].strip()
-        ]
-
-    def get_query_data(self):
-        """Generate a clean query object with only valid tests."""
-        return {
-            "definition": self._state["definition"]["text"],
-            "tests": self.get_active_tests(),
-        }

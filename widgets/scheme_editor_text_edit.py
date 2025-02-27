@@ -3,7 +3,7 @@ from PySide6.QtGui import QKeyEvent, QUndoStack
 from PySide6.QtWidgets import QTextEdit
 
 
-class SchemeEditorTextView(QTextEdit):
+class SchemeEditorTextEdit(QTextEdit):
     # List of logic variables to cycle through
     logic_vars = [f",{chr(c)}" for c in range(65, 91)]  # ,A ... ,Z
     textChanged = Signal(str)
@@ -12,21 +12,15 @@ class SchemeEditorTextView(QTextEdit):
         super().__init__(parent)
 
         self.setAcceptRichText(False)
-
-        # Set up undo stack
         self.undo_stack = QUndoStack(self)
-
-        # Configure editor settings
         self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         self.setTabStopDistance(20)  # Equivalent to 4 spaces
-        self._block_text_changed_signal = False  # Add flag to block signal emission
+        self._block_text_changed_signal = False
 
     @Slot(QKeyEvent)
     def keyPressEvent(self, event: QKeyEvent):
-        # Disable listener while processing key event
         self.setUpdatesEnabled(False)
 
-        # Detect Control+Space
         if (
             event.modifiers() == Qt.KeyboardModifier.ControlModifier
             and event.key() == Qt.Key.Key_Space
@@ -38,7 +32,6 @@ class SchemeEditorTextView(QTextEdit):
         else:
             super().keyPressEvent(event)
 
-        # Re-enable listener and emit signal if not blocked
         self.setUpdatesEnabled(True)
         if not self._block_text_changed_signal:
             self.textChanged.emit(self.toPlainText())
@@ -47,11 +40,9 @@ class SchemeEditorTextView(QTextEdit):
     def _insert_gensym(self, var_to_insert):
         cursor = self.textCursor()
         current_pos = cursor.position()
-        # Insert with undo support
         cursor.beginEditBlock()
         cursor.insertText(var_to_insert)
         cursor.endEditBlock()
-        # Move cursor to end of inserted text
         cursor.setPosition(current_pos + len(var_to_insert))
         self.setTextCursor(cursor)
 
@@ -70,7 +61,6 @@ class SchemeEditorTextView(QTextEdit):
 
     @Slot()
     def insertFromMimeData(self, source):
-        # Convert tabs to spaces on paste
         if source.hasText():
             text = source.text()
             text = text.replace("\t", "    ")
@@ -81,11 +71,10 @@ class SchemeEditorTextView(QTextEdit):
 
     @Slot(str)
     def setPlainText(self, text: str):
-        """Override setPlainText to preserve cursor and emit signal."""
-        self._block_text_changed_signal = True  # Block signal before change
+        self._block_text_changed_signal = True
         old_cursor_pos = self.textCursor().position()
         super().setPlainText(text)
-        cursor = self.textCursor()  # Get the current cursor
-        cursor.setPosition(old_cursor_pos)  # Restore old position
-        self.setTextCursor(cursor)  # Apply the modified cursor
-        self._block_text_changed_signal = False  # Re-enable signal
+        cursor = self.textCursor()
+        cursor.setPosition(old_cursor_pos)
+        self.setTextCursor(cursor)
+        self._block_text_changed_signal = False
