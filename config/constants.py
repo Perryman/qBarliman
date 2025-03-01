@@ -13,8 +13,9 @@ ALLTESTS_QS_FILE_1 = "interp-alltests-query-string-part-1.scm"
 ALLTESTS_QS_FILE_2 = "interp-alltests-query-string-part-2.scm"
 INTERP_EVAL_QS_FILE_1 = "interp-eval-query-string-part-1.scm"
 INTERP_EVAL_QS_FILE_2 = "interp-eval-query-string-part-2.scm"
-BARLIMAN_QUERY_SIMPLE_FILE = "barliman-query-simple.scm"
-BARLIMAN_QUERY_ALLTESTS_FILE = "barliman-query-alltests.scm"
+BARLIMAN_QUERY_TEST_FILE = "barliman-new-test-query-template.scm"
+BARLIMAN_QUERY_SIMPLE_FILE = "barliman-new-simple-query-template.scm"
+BARLIMAN_QUERY_ALLTESTS_FILE = "barliman-new-alltests-query-template.scm"
 
 # Minikanren file names
 
@@ -53,6 +54,9 @@ INTERP_ALLTESTS_P_1 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_FILE_1)
 INTERP_ALLTESTS_P_2 = os.path.join(TEMPLATES_DIR, ALLTESTS_QS_FILE_2)
 INTERP_EVAL_P_1 = os.path.join(TEMPLATES_DIR, INTERP_EVAL_QS_FILE_1)
 INTERP_EVAL_P_2 = os.path.join(TEMPLATES_DIR, INTERP_EVAL_QS_FILE_2)
+BARLIMAN_QUERY_TEST_P = os.path.join(TEMPLATES_DIR, BARLIMAN_QUERY_TEST_FILE)
+BARLIMAN_QUERY_SIMPLE_P = os.path.join(TEMPLATES_DIR, BARLIMAN_QUERY_SIMPLE_FILE)
+BARLIMAN_QUERY_ALLTESTS_P = os.path.join(TEMPLATES_DIR, BARLIMAN_QUERY_ALLTESTS_FILE)
 
 # System paths and configuration
 
@@ -104,6 +108,9 @@ ALLTESTS_STRING_1 = load_safe(INTERP_ALLTESTS_P_1)
 ALLTESTS_STRING_2 = load_safe(INTERP_ALLTESTS_P_2)
 EVAL_STRING_1 = load_safe(INTERP_EVAL_P_1)
 EVAL_STRING_2 = load_safe(INTERP_EVAL_P_2)
+BARLIMAN_QUERY_TEST_STRING = load_safe(BARLIMAN_QUERY_TEST_P)
+BARLIMAN_QUERY_SIMPLE_STRING = load_safe(BARLIMAN_QUERY_SIMPLE_P)
+BARLIMAN_QUERY_ALLTESTS_STRING = load_safe(BARLIMAN_QUERY_ALLTESTS_P)
 INTERP_SCM = load_safe(INTERP_FULLPATH)
 
 # Default value fields
