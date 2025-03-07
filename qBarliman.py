@@ -3,7 +3,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication, QMainWindow
 
-from controllers.editor_window_controller import EditorWindowController
+from controllers.editor_controller import EditorController
 
 
 def signal_handler(signum, frame):
@@ -17,7 +17,7 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
     app = QApplication(sys.argv)
     main_window = QMainWindow()
-    main_window.controller = EditorWindowController(main_window)
+    main_window.controller = EditorController(main_window)
     main_window.show()
     return app.exec()
 

@@ -17,8 +17,8 @@ runtimes:
 # This is the section where you manage your linters. (https://docs.trunk.io/check/configuration)
 lint:
   enabled:
-    - semgrep@1.110.0
-    - checkov@3.2.377
+    - semgrep@1.111.0
+    - checkov@3.2.382
     - taplo@0.9.3
     - yamllint@1.35.1
     - sourcery@1.35.0
@@ -28,9 +28,9 @@ lint:
     - isort@6.0.1
     - markdownlint@0.44.0
     - osv-scanner@1.9.2
-    - prettier@3.5.2
-    - ruff@0.9.7
-    - trufflehog@3.88.13
+    - prettier@3.5.3
+    - ruff@0.9.9
+    - trufflehog@3.88.15
   ignore:
     - linters: [ALL]
       paths:
