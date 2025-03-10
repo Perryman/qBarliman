@@ -73,19 +73,35 @@ class EditorModel(QObject):
         """
         self._update_state(path, value)
 
-    def _update_test_validity(self, index):
-        """Update the status of a test case based on input/expected."""
-        test = self._state["tests"][index]
+    def _default_test_validator(self, test):
+        """Default validation logic for test cases."""
         has_input = bool(test["input"].strip())
         has_expected = bool(test["expected"].strip())
 
         if has_input and has_expected:
-            status = ("Ready", None)
+            return ("Ready", None)
         elif has_input or has_expected:
-            status = ("Invalid", None)
+            return ("Invalid", None)
         else:
-            status = ("Empty", None)
+            return ("Empty", None)
+
+    def update_test_status(self, index, validator_fn=None):
+        """
+        Update test status using provided validation function.
+
+        Args:
+            index: Index of the test to update
+            validator_fn: Function that accepts a test dict and returns status tuple
+        """
+        self._ensure_test_exists(index)
+        test = self._state["tests"][index]
+        validator = validator_fn or self._default_test_validator
+        status = validator(test)
         self._update_state(f"tests.{index}.status", status)
+
+    def _update_test_validity(self, index):
+        """Update the status of a test case based on input/expected."""
+        self.update_test_status(index)
 
     def _ensure_test_exists(self, index):
         """Ensure a test case exists at the given index."""
