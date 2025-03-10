@@ -1,10 +1,5 @@
 from PySide6.QtCore import QObject, Signal
 
-from config.constants import (
-    DEFAULT_DEFINITIONS,
-    DEFAULT_TEST_EXPECTED_OUTPUTS,
-    DEFAULT_TEST_INPUTS,
-)
 from utils import log as l
 
 
@@ -13,32 +8,14 @@ class EditorModel(QObject):
 
     state_changed = Signal(object)
 
-    def __init__(self, debug_prints=True):
+    def __init__(self, initial_state, debug_prints=True):
         super().__init__()
-        self._state = {
-            "definition": {"text": "", "status": ("Idle", None)},
-            "best_guess": {"text": "", "status": ("Idle", None)},
-            "error_output": "",
-            "tests": [],
-        }
+        self._state = initial_state
         self._debug_prints = debug_prints
-        self._apply_defaults()
 
-    def _apply_defaults(self):
-        """Apply default values to state."""
-        self.update("definition.text", "\n".join(DEFAULT_DEFINITIONS))
-
-        for i in range(
-            max(len(DEFAULT_TEST_INPUTS), len(DEFAULT_TEST_EXPECTED_OUTPUTS))
-        ):
-            input_text = DEFAULT_TEST_INPUTS[i] if i < len(DEFAULT_TEST_INPUTS) else ""
-            expected_text = (
-                DEFAULT_TEST_EXPECTED_OUTPUTS[i]
-                if i < len(DEFAULT_TEST_EXPECTED_OUTPUTS)
-                else ""
-            )
-            self.update(f"tests.{i}.input", input_text)
-            self.update(f"tests.{i}.expected", expected_text)
+        if self._debug_prints:
+            l.debug("EditorModel initialized with state:")
+            l.debug(self._state)
 
     def _update_state(self, path, value):
         """Update state at path and emit signal if changed.  Handles test validity."""
