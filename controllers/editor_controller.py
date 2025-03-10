@@ -136,7 +136,7 @@ class EditorController(QObject):
         definition_editor = self.component_registry["definition"]["components"][
             "widget"
         ]["widget"]
-        definition_editor.setText(definition_text)
+        definition_editor.setPlainText(definition_text)
 
         # Update test inputs and expected outputs
         for i in range(6):
